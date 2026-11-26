@@ -100,3 +100,42 @@ fn scan_should_list_classes_from_every_file() {
     let output = prunecss(&["scan", path_arg(&html), path_arg(&jsx)]);
     insta::assert_snapshot!(stdout(&output));
 }
+
+fn framework_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/frameworks")
+        .join(name)
+}
+
+fn prune_framework_fixture(extra: &[&str]) -> Output {
+    let css = framework_fixture("styles.css");
+    let components: Vec<PathBuf> = [
+        "Button.jsx",
+        "Card.tsx",
+        "Alert.vue",
+        "Item.svelte",
+        "Badge.astro",
+    ]
+    .iter()
+    .map(|name| framework_fixture(name))
+    .collect();
+    let mut args = vec!["prune", path_arg(&css), "--content"];
+    args.extend(components.iter().map(|path| path_arg(path)));
+    args.extend_from_slice(extra);
+    prunecss(&args)
+}
+
+// Classes used through clsx, template literals, Vue/Svelte/Astro bindings,
+// CSS modules and DOM APIs must all survive; only the two `unused-*` go.
+#[test]
+fn prune_should_keep_classes_used_by_framework_components() {
+    let output = prune_framework_fixture(&["--minify"]);
+    insta::assert_snapshot!(stdout(&output));
+}
+
+#[test]
+fn prune_should_remove_only_unused_classes_from_framework_components() {
+    let output = prune_framework_fixture(&["--stats"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("removed 2 selectors"), "stderr: {stderr}");
+}

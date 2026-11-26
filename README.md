@@ -45,11 +45,23 @@ It does:
   `@starting-style`, and drop those blocks once they are empty;
 - remove nested rules together with their parent.
 
+### Finding class names
+
+prunecss does not parse your templates. It splits every content file into
+candidate names, the approach Tailwind's own scanner uses, so it finds names
+in HTML, JSX/TSX (`className`, `clsx(...)`, template literals, object keys),
+Vue (`:class`), Svelte (`class:active`), Astro (`class:list`), Angular
+(`[ngClass]`), CSS modules (`styles.button`) and DOM calls such as
+`classList.add("open")`. Tailwind-style names stay whole: `md:flex`, `w-1/2`,
+`!mt-0`, `grid-cols-[repeat(auto-fill,minmax(0,1fr))]`.
+
+Over-collecting is deliberate. A candidate that isn't a real class keeps no
+CSS, but a missed one would delete CSS the page needs.
+
 ### Known limits
 
-- Class names built at runtime, such as `` `btn-${size}` `` or `clsx(...)`
-  calls, are not detected yet, so their CSS is removed. Don't use prunecss on
-  such projects yet.
+- Class names assembled at runtime, such as `` `btn-${size}` ``, cannot be
+  found by any static scanner. A safelist for these is coming next.
 - Output is reprinted by Lightning CSS, so some values change to an equivalent
   form (`white` becomes `#fff`, `::before` becomes `:before`). Media queries
   keep the widely supported `min-width` form.
@@ -59,7 +71,7 @@ It does:
 - [x] Scan `class="…"` / `className="…"` attributes
 - [x] Parse CSS with [Lightning CSS](https://lightningcss.dev) and match selectors
 - [x] Remove unused rules and selectors and write the result
-- [ ] Detect class names in JS expressions (`clsx`, template literals)
+- [x] Detect class names in JS, Vue, Svelte, Astro and Angular templates
 - [ ] Safelist and PurgeCSS-compatible config
 - [ ] Track `@keyframes`, fonts and custom properties
 - [ ] Parallel scanning of whole projects (`ignore` + rayon)

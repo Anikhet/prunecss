@@ -26,7 +26,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Print every class name used in the given content files.
+    /// Print every candidate class or id name found in the content files.
+    ///
+    /// The scanner over-collects on purpose: a candidate that is not a real
+    /// class keeps no CSS, while a missed one would delete CSS.
     Scan {
         /// HTML, JSX or other markup files to scan.
         #[arg(required = true)]
