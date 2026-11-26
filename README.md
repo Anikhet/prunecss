@@ -2,8 +2,8 @@
 
 Remove unused CSS, fast. Written in Rust.
 
-> **Status: early development.** Scanning and pruning work on individual files.
-> Not yet ready for production stylesheets.
+> **Status: early development (0.x).** Review the output before shipping it,
+> and report anything wrongly removed.
 
 Websites often ship a large stylesheet (all of Bootstrap, an old design system)
 while each page uses a fraction of it. `prunecss` scans your HTML, JSX and
@@ -11,18 +11,51 @@ templates for the class names they actually use, then removes the CSS rules
 that can never match. The goal is to be a much faster drop-in alternative to
 [PurgeCSS](https://github.com/FullHuman/purgecss).
 
-## Try it
+## Usage
+
+Prune one stylesheet against your source files (quote globs so the shell
+doesn't expand them):
 
 ```bash
-cargo run -- prune styles.css --content index.html App.jsx --stats > pruned.css
+prunecss prune dist/app.css --content 'src/**/*.{html,jsx,tsx,vue,svelte,astro}' -o dist/app.pruned.css
 ```
 
-Other options: `--output pruned.css` writes to a file, and `--minify` removes
-whitespace. To see which class names were found:
+Or put the settings in a `prunecss.json` at the project root and just run
+`prunecss prune`. prunecss looks for the file in the current directory and
+its parents; paths in it are relative to the file. Option names follow
+PurgeCSS, and the JSON Schema gives your editor autocompletion:
 
-```bash
-cargo run -- scan index.html App.jsx
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Anikhet/prunecss/main/prunecss.schema.json",
+  "css": ["dist/**/*.css"],
+  "content": ["src/**/*.{html,jsx,tsx,vue,svelte,astro}", "index.html"],
+  "output": "dist/pruned/",
+  "safelist": { "standard": ["/^is-/"], "greedy": ["/^swiper/"] },
+  "keyframes": true,
+  "minify": true
+}
 ```
+
+Unknown keys are an error, so a typo can't silently change what is removed.
+Command-line flags override the file; `--no-config` ignores it.
+
+| Task | Command |
+|---|---|
+| Prune and print to stdout | `prunecss prune app.css -c 'src/**/*'` |
+| Several stylesheets into a directory | `prunecss prune 'dist/*.css' -c src -o dist/pruned/` |
+| Read CSS from a pipe | `cat app.css \| prunecss prune - -c src` |
+| CI check: fail if anything is unused | `prunecss prune --check` |
+| Machine-readable summary | `prunecss prune --check --json` |
+| What names does my code use? | `prunecss scan 'src/**/*' --css dist/app.css` |
+| Shell completions | `prunecss completions bash` (also zsh, fish, …) |
+
+Globs respect `.gitignore` (`--no-gitignore` turns that off); files you name
+directly are always used. **If the content patterns match no files at all,
+prunecss refuses to run**, because every class would look unused.
+
+Exit codes: `0` success, `1` `--check` found CSS that would be removed,
+`2` any error.
 
 ## How it decides what to remove
 
@@ -103,8 +136,9 @@ variable used from JavaScript is kept.
 - [x] Detect class names in JS, Vue, Svelte, Astro and Angular templates
 - [x] Safelist (standard, greedy, deep; exact or `/regex/`)
 - [x] Opt-in removal of unused `@keyframes`, `@font-face` and custom properties
-- [ ] PurgeCSS-compatible config file
-- [ ] Parallel scanning of whole projects (`ignore` + rayon)
+- [x] `prunecss.json` config file with JSON Schema
+- [x] Globs, `.gitignore`-aware discovery and parallel scanning
+- [x] `--check` mode, exit codes, JSON report, stdin, shell completions
 - [ ] Benchmarks against PurgeCSS
 - [ ] npm package, Vite and PostCSS plugins
 - [ ] Language server and VS Code extension

@@ -1,6 +1,10 @@
 //! End-to-end tests that run the real `prunecss` binary.
 
-#![expect(clippy::panic, reason = "test helpers should fail loudly")]
+#![expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test helpers should fail loudly"
+)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -86,9 +90,9 @@ fn prune_should_fail_with_a_clear_message_for_a_missing_file() {
     let output = prunecss(&["prune", "missing.css", "--content", "missing.html"]);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
     assert!(
-        stderr.starts_with("error: reading missing.css"),
+        stderr.starts_with("error: no stylesheet matched `missing.css`"),
         "stderr: {stderr}"
     );
 }
@@ -183,4 +187,322 @@ fn prune_should_report_tracked_removals_in_stats() {
     let output = prune_fixture_site(&["--keyframes", "--stats"]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("1 @keyframes"), "stderr: {stderr}");
+}
+
+// ---- Project mode: config files, globs, check mode, exit codes ----------
+
+/// A small project in a temporary directory.
+fn project(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    for (path, contents) in files {
+        let path = dir.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+    dir
+}
+
+fn sample_project() -> tempfile::TempDir {
+    project(&[
+        ("src/index.html", r#"<div class="used"></div>"#),
+        ("src/app/App.jsx", r#"<p className={clsx("also-used")} />"#),
+        (
+            "styles/app.css",
+            ".used{color:red}.also-used{color:red}.unused{color:red}",
+        ),
+        ("styles/theme.css", ".used{color:blue}.gone{color:blue}"),
+    ])
+}
+
+fn run_in(dir: &Path, args: &[&str], stdin: Option<&str>) -> Output {
+    use std::io::Write as _;
+    let mut command = Command::new(env!("CARGO_BIN_EXE_prunecss"));
+    command.current_dir(dir).args(args);
+    command.stdin(std::process::Stdio::piped());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    let mut pipe = child.stdin.take().unwrap();
+    pipe.write_all(stdin.unwrap_or_default().as_bytes())
+        .unwrap();
+    drop(pipe);
+    child.wait_with_output().unwrap()
+}
+
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn prune_should_expand_content_globs() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "styles/app.css",
+            "--content",
+            "src/**/*.{html,jsx}",
+            "--minify",
+        ],
+        None,
+    );
+    assert_eq!(stdout(&output), ".used{color:red}.also-used{color:red}");
+}
+
+#[test]
+fn prune_should_read_settings_from_prunecss_json() {
+    let dir = sample_project();
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        r#"{ "css": ["styles/*.css"], "content": ["src/**/*"], "output": "out/", "minify": true,
+             "safelist": ["gone"] }"#,
+    )
+    .unwrap();
+    let output = run_in(dir.path(), &["prune"], None);
+    let theme =
+        std::fs::read_to_string(dir.path().join("out/styles/theme.css")).unwrap_or_default();
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(theme, ".used{color:#00f}.gone{color:#00f}");
+}
+
+#[test]
+fn prune_should_find_the_config_from_a_subdirectory() {
+    let dir = sample_project();
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        r#"{ "css": ["styles/app.css"], "content": ["src"], "minify": true }"#,
+    )
+    .unwrap();
+    let output = run_in(&dir.path().join("src/app"), &["prune"], None);
+    assert_eq!(stdout(&output), ".used{color:red}.also-used{color:red}");
+}
+
+#[test]
+fn prune_should_let_flags_override_the_config() {
+    let dir = sample_project();
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        r#"{ "css": ["styles/app.css"], "content": ["src/index.html"], "minify": true }"#,
+    )
+    .unwrap();
+    let output = run_in(dir.path(), &["prune", "--content", "src/app/App.jsx"], None);
+    assert_eq!(stdout(&output), ".also-used{color:red}");
+}
+
+#[test]
+fn prune_should_ignore_the_config_with_no_config() {
+    let dir = sample_project();
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        r#"{ "css": ["styles/app.css"] }"#,
+    )
+    .unwrap();
+    let output = run_in(dir.path(), &["prune", "--no-config"], None);
+    assert!(
+        stderr(&output).contains("no stylesheet given"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn prune_should_reject_unknown_config_keys() {
+    let dir = sample_project();
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        r#"{ "contnet": ["src"] }"#,
+    )
+    .unwrap();
+    let output = run_in(dir.path(), &["prune", "styles/app.css"], None);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("unknown field `contnet`"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+// The most dangerous mistake: a typo in --content would make every class look
+// unused and delete the whole stylesheet.
+#[test]
+fn prune_should_refuse_to_run_when_no_content_matches() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/app.css", "--content", "scr/**/*.html"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("refusing to prune"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn prune_should_warn_about_content_patterns_that_match_nothing() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "styles/app.css",
+            "--content",
+            "src/**/*.html",
+            "src/**/*.vue",
+        ],
+        None,
+    );
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("warning: content pattern `src/**/*.vue` matched no files"));
+}
+
+#[test]
+fn check_should_exit_with_one_when_css_would_be_removed() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/app.css", "-c", "src", "--check"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("would remove 1 selectors"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn check_should_exit_with_zero_when_nothing_is_unused() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "styles/app.css",
+            "-c",
+            "src",
+            "--check",
+            "--safelist",
+            "unused",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn check_should_write_nothing() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "styles/app.css",
+            "-c",
+            "src",
+            "--check",
+            "-o",
+            "out.css",
+        ],
+        None,
+    );
+    assert!(output.stdout.is_empty());
+    assert!(!dir.path().join("out.css").exists());
+}
+
+#[test]
+fn prune_should_read_css_from_standard_input() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "-", "-c", "src", "--minify"],
+        Some(".used{color:red}.x{color:red}"),
+    );
+    assert_eq!(stdout(&output), ".used{color:red}");
+}
+
+#[test]
+fn prune_should_require_an_output_directory_for_several_stylesheets() {
+    let dir = sample_project();
+    let output = run_in(dir.path(), &["prune", "styles/*.css", "-c", "src"], None);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("2 stylesheets matched"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn prune_should_mirror_paths_into_the_output_directory() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/*.css", "-c", "src", "-o", "dist"],
+        None,
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(dir.path().join("dist/styles/app.css").is_file());
+    assert!(dir.path().join("dist/styles/theme.css").is_file());
+}
+
+#[test]
+fn prune_should_print_a_json_report() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/app.css", "-c", "src", "--check", "--json"],
+        None,
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["files"][0]["removedSelectors"], 1);
+    assert_eq!(report["contentFiles"], 2);
+}
+
+#[test]
+fn prune_should_refuse_json_when_css_goes_to_standard_output() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/app.css", "-c", "src", "--json"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn scan_should_filter_names_by_a_stylesheet() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["scan", "src", "--css", "styles/app.css"],
+        None,
+    );
+    assert_eq!(stdout(&output), "also-used\nused\n");
+}
+
+#[test]
+fn schema_should_print_the_committed_schema() {
+    let committed = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../prunecss.schema.json"),
+    )
+    .unwrap();
+    let output = prunecss(&["schema"]);
+    assert_eq!(stdout(&output), committed);
+}
+
+#[test]
+fn completions_should_print_a_script() {
+    let output = prunecss(&["completions", "bash"]);
+    assert!(stdout(&output).contains("prunecss"));
+}
+
+#[test]
+fn invalid_arguments_should_exit_with_two() {
+    let output = prunecss(&["prune", "--no-such-flag"]);
+    assert_eq!(output.status.code(), Some(2));
 }

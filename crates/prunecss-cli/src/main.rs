@@ -8,35 +8,67 @@
     reason = "the CLI prints its results"
 )]
 
-use std::collections::BTreeSet;
+mod config;
+mod files;
+mod run;
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand};
-use prunecss_core::{Pattern, PruneOptions, Safelist, extract_classes};
+use clap::{Args, CommandFactory, Parser, Subcommand};
+use prunecss_core::{Pattern, PruneOptions};
+
+use crate::config::Config;
+use crate::run::{Outcome, Patterns, PruneSettings};
+
+/// Exit code when `--check` finds CSS that pruning would remove.
+const EXIT_WOULD_REMOVE: u8 = 1;
+/// Exit code for usage, config, input/output and internal errors. clap uses
+/// the same code for invalid arguments.
+const EXIT_ERROR: u8 = 2;
 
 /// Remove unused CSS, fast.
+///
+/// Settings come from command-line flags, then the nearest prunecss.json
+/// (in the current directory or a parent), then defaults.
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version, about, long_about)]
+#[command(after_help = "Examples:
+  prunecss prune dist/app.css --content 'src/**/*.{html,tsx}' -o dist/app.min.css
+  prunecss prune --check            # CI: exit 1 if anything is unused
+  prunecss scan 'src/**/*.vue' --css dist/app.css
+
+Exit codes: 0 success, 1 --check found unused CSS, 2 error.")]
 struct Cli {
+    /// Use this config file instead of searching for prunecss.json.
+    #[arg(long, global = true, value_name = "FILE", conflicts_with = "no_config")]
+    config: Option<PathBuf>,
+    /// Ignore any prunecss.json.
+    #[arg(long, global = true)]
+    no_config: bool,
+
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Print every candidate class or id name found in the content files.
+    /// Remove rules from stylesheets that no content file can match.
+    Prune(PruneArgs),
+    /// Print the candidate class and id names found in content files.
     ///
     /// The scanner over-collects on purpose: a candidate that is not a real
-    /// class keeps no CSS, while a missed one would delete CSS.
-    Scan {
-        /// HTML, JSX or other markup files to scan.
-        #[arg(required = true)]
-        files: Vec<PathBuf>,
+    /// class keeps no CSS, while a missed one would delete CSS. Pass --css
+    /// to show only names a stylesheet defines.
+    Scan(ScanArgs),
+    /// Print the JSON Schema for prunecss.json.
+    Schema,
+    /// Print a shell completion script, e.g. `prunecss completions bash`.
+    Completions {
+        /// The shell to generate completions for.
+        shell: clap_complete::Shell,
     },
-    /// Remove rules from a stylesheet that no content file can match.
-    Prune(PruneArgs),
 }
 
 #[derive(Args)]
@@ -45,13 +77,15 @@ enum Command {
     reason = "each bool is an independent command-line flag"
 )]
 struct PruneArgs {
-    /// The stylesheet to prune.
-    css: PathBuf,
-    /// Content files whose class names count as used.
-    #[arg(long, short, required = true, num_args = 1..)]
-    content: Vec<PathBuf>,
-    /// Write the result here instead of to standard output.
-    #[arg(long, short)]
+    /// Stylesheets: files, directories or globs. `-` reads standard input.
+    css: Vec<String>,
+    /// Content files whose class names count as used: files, directories or
+    /// globs such as 'src/**/*.{html,tsx}'.
+    #[arg(long, short, num_args = 1.., value_name = "PATTERN")]
+    content: Vec<String>,
+    /// Write here instead of standard output: a file for one stylesheet, a
+    /// directory for several.
+    #[arg(long, short, value_name = "PATH")]
     output: Option<PathBuf>,
     /// Print the result without whitespace.
     #[arg(long)]
@@ -59,6 +93,15 @@ struct PruneArgs {
     /// Print a summary of what was removed to standard error.
     #[arg(long)]
     stats: bool,
+    /// Write nothing; exit with 1 if any CSS would be removed.
+    #[arg(long)]
+    check: bool,
+    /// Print the summary as JSON to standard output.
+    #[arg(long)]
+    json: bool,
+    /// Include files listed in .gitignore when expanding globs.
+    #[arg(long)]
+    no_gitignore: bool,
 
     /// Treat a class or id as used. `/regex/` or an exact name; repeatable.
     #[arg(long, value_name = "PATTERN", value_parser = Pattern::parse, help_heading = "Safelist")]
@@ -81,88 +124,135 @@ struct PruneArgs {
     variables: bool,
 }
 
-impl PruneArgs {
-    fn options(&self) -> PruneOptions {
-        let mut safelist = Safelist::default();
-        safelist.standard.clone_from(&self.safelist);
-        safelist.greedy.clone_from(&self.safelist_greedy);
-        safelist.deep.clone_from(&self.safelist_deep);
-        PruneOptions::default()
-            .minify(self.minify)
-            .safelist(safelist)
-            .keyframes(self.keyframes)
-            .font_face(self.font_face)
-            .variables(self.variables)
-    }
+#[derive(Args)]
+struct ScanArgs {
+    /// Content files, directories or globs. Defaults to `content` in
+    /// prunecss.json.
+    content: Vec<String>,
+    /// Only print names that this stylesheet's selectors mention.
+    #[arg(long, value_name = "FILE")]
+    css: Option<PathBuf>,
+    /// Include files listed in .gitignore when expanding globs.
+    #[arg(long)]
+    no_gitignore: bool,
 }
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(Outcome::Clean) => ExitCode::SUCCESS,
+        Ok(Outcome::WouldRemove) => ExitCode::from(EXIT_WOULD_REMOVE),
         Err(err) => {
             // `{:#}` prints the whole cause chain on one line, without the
             // backtrace that returning the error from `main` would show.
             eprintln!("error: {err:#}");
-            ExitCode::FAILURE
+            ExitCode::from(EXIT_ERROR)
         }
     }
 }
 
-fn run(cli: Cli) -> Result<()> {
+fn run(cli: Cli) -> Result<Outcome> {
     match cli.command {
-        Command::Scan { files } => scan(&files),
-        Command::Prune(args) => prune(&args),
+        Command::Prune(args) => {
+            let loaded = load_config(cli.config.as_deref(), cli.no_config)?;
+            run::prune(&prune_settings(args, &loaded)?)
+        }
+        Command::Scan(args) => {
+            let loaded = load_config(cli.config.as_deref(), cli.no_config)?;
+            let content = choose(args.content, &loaded.config.content, &loaded);
+            let gitignore = !args.no_gitignore && loaded.config.gitignore.unwrap_or(true);
+            run::scan(&content, args.css.as_deref(), gitignore)?;
+            Ok(Outcome::Clean)
+        }
+        Command::Schema => {
+            print!("{}", config::schema());
+            Ok(Outcome::Clean)
+        }
+        Command::Completions { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "prunecss",
+                &mut std::io::stdout(),
+            );
+            Ok(Outcome::Clean)
+        }
     }
 }
 
-fn read(path: &Path) -> Result<String> {
-    std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+/// A config file and the directory its paths are relative to.
+struct Loaded {
+    config: Config,
+    dir: PathBuf,
+    cwd: PathBuf,
 }
 
-fn read_all(paths: &[PathBuf]) -> Result<Vec<String>> {
-    paths.iter().map(|path| read(path)).collect()
+fn load_config(explicit: Option<&Path>, disabled: bool) -> Result<Loaded> {
+    let cwd = std::env::current_dir().context("finding the current directory")?;
+    let path = match explicit {
+        Some(path) => Some(path.to_path_buf()),
+        None if disabled => None,
+        None => config::discover(&cwd),
+    };
+    let Some(path) = path else {
+        return Ok(Loaded {
+            config: Config::default(),
+            dir: cwd.clone(),
+            cwd,
+        });
+    };
+    let config = config::load(&path)?;
+    let dir = cwd
+        .join(&path)
+        .parent()
+        .map_or_else(|| cwd.clone(), Path::to_path_buf);
+    Ok(Loaded { config, dir, cwd })
 }
 
-/// Collects the class names used across `sources`, borrowing from them.
-fn used_classes(sources: &[String]) -> BTreeSet<&str> {
-    sources
-        .iter()
-        .flat_map(|source| extract_classes(source))
-        .collect()
-}
-
-fn scan(files: &[PathBuf]) -> Result<()> {
-    let sources = read_all(files)?;
-    for class in used_classes(&sources) {
-        println!("{class}");
+/// Command-line patterns win and are relative to the current directory;
+/// otherwise the config's, relative to the config file.
+fn choose(cli: Vec<String>, from_config: &[String], loaded: &Loaded) -> Patterns {
+    if cli.is_empty() {
+        Patterns {
+            patterns: from_config.to_vec(),
+            base: loaded.dir.clone(),
+        }
+    } else {
+        Patterns {
+            patterns: cli,
+            base: loaded.cwd.clone(),
+        }
     }
-    Ok(())
 }
 
-fn prune(args: &PruneArgs) -> Result<()> {
-    let css = read(&args.css)?;
-    let sources = read_all(&args.content)?;
-    let used = used_classes(&sources);
+fn prune_settings(args: PruneArgs, loaded: &Loaded) -> Result<PruneSettings> {
+    let config = &loaded.config;
+    let mut safelist = config
+        .safelist
+        .to_safelist()
+        .context("invalid `safelist` in prunecss.json")?;
+    safelist.standard.extend(args.safelist);
+    safelist.greedy.extend(args.safelist_greedy);
+    safelist.deep.extend(args.safelist_deep);
 
-    let pruned = prunecss_core::prune(&css, &used, &args.options())
-        .with_context(|| format!("pruning {}", args.css.display()))?;
+    let options = PruneOptions::default()
+        .minify(args.minify || config.minify)
+        .safelist(safelist)
+        .keyframes(args.keyframes || config.keyframes)
+        .font_face(args.font_face || config.font_face)
+        .variables(args.variables || config.variables);
 
-    match &args.output {
-        Some(path) => std::fs::write(path, &pruned.css)
-            .with_context(|| format!("writing {}", path.display()))?,
-        None => print!("{}", pruned.css),
-    }
+    let output = args
+        .output
+        .or_else(|| config.output.as_ref().map(|output| loaded.dir.join(output)));
 
-    if args.stats {
-        eprintln!(
-            "prunecss: removed {} selectors, {} @keyframes, {} @font-face, {} variables; {} -> {} bytes",
-            pruned.removed_selectors,
-            pruned.removed_keyframes,
-            pruned.removed_font_faces,
-            pruned.removed_variables,
-            css.len(),
-            pruned.css.len()
-        );
-    }
-    Ok(())
+    Ok(PruneSettings {
+        css: choose(args.css, &config.css, loaded),
+        content: choose(args.content, &config.content, loaded),
+        output,
+        options,
+        gitignore: !args.no_gitignore && config.gitignore.unwrap_or(true),
+        check: args.check,
+        stats: args.stats,
+        json: args.json,
+    })
 }

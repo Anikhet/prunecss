@@ -296,6 +296,83 @@ pub fn prune(
     })
 }
 
+/// Returns every class and id name that selectors in `css` mention,
+/// unescaped and without `.` or `#`, in sorted order.
+///
+/// Useful for reports such as "which of my classes does the content use".
+///
+/// ```
+/// let names = prunecss_core::defined_names(".btn, #nav .md\\:flex:not(.x) {}")?;
+/// assert_eq!(names.into_iter().collect::<Vec<_>>(), ["btn", "md:flex", "nav", "x"]);
+/// # Ok::<(), prunecss_core::PruneError>(())
+/// ```
+///
+/// # Errors
+///
+/// Returns a [`PruneErrorKind::Parse`] error if the stylesheet cannot be
+/// parsed even with error recovery.
+pub fn defined_names(css: &str) -> Result<BTreeSet<String>, PruneError> {
+    let parser_options = ParserOptions {
+        error_recovery: true,
+        ..ParserOptions::default()
+    };
+    let sheet = StyleSheet::parse(css, parser_options)
+        .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Parse, &err))?;
+    let mut names = BTreeSet::new();
+    collect_rule_names(&sheet.rules, &mut names);
+    Ok(names)
+}
+
+fn collect_rule_names<R>(rules: &CssRuleList<'_, R>, names: &mut BTreeSet<String>) {
+    for rule in &rules.0 {
+        if let Some(group) = rules::group_rules(rule) {
+            collect_rule_names(group, names);
+            continue;
+        }
+        let style = match rule {
+            CssRule::Style(style) => style,
+            CssRule::Nesting(nesting) => &nesting.style,
+            CssRule::LayerBlock(layer) => {
+                collect_rule_names(&layer.rules, names);
+                continue;
+            }
+            _ => continue,
+        };
+        for selector in &style.selectors.0 {
+            collect_selector_names(selector, names);
+        }
+        collect_rule_names(&style.rules, names);
+    }
+}
+
+fn collect_selector_names(selector: &Selector<'_>, names: &mut BTreeSet<String>) {
+    for component in selector.iter_raw_match_order() {
+        match component {
+            Component::Class(name) | Component::ID(name) => {
+                names.insert(name.0.to_string());
+            }
+            Component::Is(list)
+            | Component::Where(list)
+            | Component::Any(_, list)
+            | Component::Negation(list)
+            | Component::Has(list) => {
+                for inner in list {
+                    collect_selector_names(inner, names);
+                }
+            }
+            Component::NthOf(nth) => {
+                for inner in nth.selectors() {
+                    collect_selector_names(inner, names);
+                }
+            }
+            Component::Slotted(inner) | Component::Host(Some(inner)) => {
+                collect_selector_names(inner, names);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Decides whether a class or id name keeps a selector alive.
 struct Matcher<'a, U> {
     used: &'a U,
@@ -1057,6 +1134,23 @@ mod tests {
             prune_with(css, &[], &PruneOptions::default()).removed_variables,
             0
         );
+    }
+
+    #[rstest]
+    #[case::class_and_id(".a,#b{color:red}", &["a", "b"])]
+    #[case::escaped(r".md\:flex{display:flex}", &["md:flex"])]
+    #[case::inside_pseudo_classes(":is(.a) :not(.b):has(.c){color:red}", &["a", "b", "c"])]
+    #[case::nested_and_grouped("@media print{.a{&.b{color:red}}}", &["a", "b"])]
+    #[case::no_selectors("@font-face{font-family:X}", &[])]
+    #[case::nth_of(":nth-child(2 of .a){color:red}", &["a"])]
+    #[case::shadow_dom(":host(.a) ::slotted(.b){color:red}", &["a", "b"])]
+    #[case::layer("@layer base{.a{color:red}}", &["a"])]
+    #[case::where_and_prefixed_any(":where(.a) :-webkit-any(.b){color:red}", &["a", "b"])]
+    #[case::legacy_nest(".a{color:red;@nest .b &{color:red}}", &["a", "b"])]
+    fn defined_names_should_list_every_class_and_id(#[case] css: &str, #[case] expected: &[&str]) {
+        let names = defined_names(css).ok();
+        let expected: BTreeSet<String> = expected.iter().map(|s| (*s).to_owned()).collect();
+        assert_eq!(names, Some(expected));
     }
 
     mod properties {
