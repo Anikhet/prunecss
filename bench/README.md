@@ -29,6 +29,18 @@ Requirements: Node 22+, a Rust toolchain, `curl`, and ideally GNU time at
 (default 10), `--warmup N` (default 3), `--rss-runs N` (default 10),
 `--skip-build`, `--no-tinybench`, `--label "text"`, `--examples N`.
 
+## Latest results (indicative, shared cloud VM)
+
+From `results/2026-11-26-vm.md` (prunecss commit `a66faef`, PurgeCSS 9.1.0):
+
+| | prunecss vs PurgeCSS CLI |
+|---|---|
+| Wall time | **5.4–24.4× faster** (median 9.0×) across 7 corpora |
+| vs PurgeCSS's JS API in a warm process | 2.3–5.7× faster (median 3.9×), for prunecss's whole CLI run |
+| Peak memory | PurgeCSS used 1.5–8.1× more |
+| Possible false removals (static DOM) | **prunecss 0 on every corpus**; PurgeCSS 376 on Tailwind (default extractor), 1 with the Tailwind extractor, 6 on the edge cases |
+| Output size | PurgeCSS is smaller: about the same on Bootstrap (114.1 vs 114.9 kB), larger gaps on Bulma and Tailwind, mostly tag/attribute selectors prunecss always keeps; brotli sizes are within 0.1–2.7 kB |
+
 Rust micro-benchmarks are separate and need no corpus:
 
 ```bash
@@ -148,22 +160,21 @@ for long suites, run the harness several times and compare.
 
 - **Noisy container.** The committed run shares 4 vCPUs (KVM) with other
   workloads; no governor control. σ is large on small corpora.
-- **prunecss feature gaps (today)**: no safelist, no config file, no globs;
-  the scanner reads only quoted `class=`/`className=` attributes, so classes
-  built in JavaScript (`classList.add('show')`), `clsx()`, Vue `:class`,
-  Svelte `class:` and unquoted `class=foo` are not seen; **`id=` attributes
-  are not read at all, so every `#id` rule is removed** (see below).
-  PurgeCSS's word extractor sees all of these because it takes every word in
-  the file, which is also why it keeps more unused CSS on documentation
-  pages that *mention* class names in prose.
+- **Both tools run with defaults**: no safelist, explicit file lists, and
+  keyframes/fonts/variables kept. prunecss's scanner reads every token of a
+  file (like Tailwind's), so it sees `classList.add('show')`, `clsx()`,
+  Vue `:class`, Svelte `class:`, `id=` and unquoted `class=foo`, which the
+  first harness run (against an early build) flagged as gaps; those are
+  fixed and kept as regression checks in `repro/false-removals.sh`.
 - **Design differences, not bugs**: prunecss never removes tag, attribute
   or pseudo-only selectors (`kbd`, `[data-theme=dark]`, `::selection`);
   PurgeCSS removes them when the word never appears. On Bulma this alone is
   ~65 kB of minified CSS (two `[data-theme]` custom-property blocks), though
   it compresses to almost nothing under brotli.
-- **Printer**: prunecss prints through Lightning CSS (alpha.72), so its
-  output is normalised (`::before` → `:before`, colours shortened). The
-  shared minifier evens this out for size and selector comparison.
+- **Printer**: prunecss prints through Lightning CSS (alpha.72), tuned for
+  old browsers (`rgba()` kept, legacy placeholder selectors kept as
+  written), so its raw output is normalised. The shared minifier evens this
+  out for size and selector comparison.
 - **Static oracle, not a browser**: see above. "Matches static DOM" for
   Astro/Jekyll sources is approximate.
 - PurgeCSS runs with its defaults (`fontFace`, `keyframes`, `variables` all
@@ -190,6 +201,6 @@ bench/
   config/purgecss-tailwind.config.mjs
   corpus/manifest.json        sources + SHA-256 of every corpus file
   corpus/edge/                hand-written edge cases (committed)
-  repro/false-removals.sh     minimal reproducers for prunecss bugs found here
+  repro/false-removals.sh     regression checks for prunecss bugs found here (all fixed)
   results/                    committed result files
 ```

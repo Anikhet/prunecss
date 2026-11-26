@@ -215,11 +215,11 @@ export function renderMarkdown(res, categories) {
     if (moved.length) losses.push(`- **${c.name}**: prunecss rewrote ${fr.rewrittenNotRemoved} selector(s) into a different selector, e.g. ${moved.slice(0, 2).map((x) => `${code(x.selector)} → ${code(x.rewrittenTo)}`).join(', ')} (compared after the shared minifier).`);
     const cmp = c.correctness.comparisons['prunecss-vs-purgecss'];
     const purgeOnly = cmp.keptOnlyByOther.count;
-    if (purgeOnly) losses.push(`- **${c.name}**: PurgeCSS kept ${purgeOnly} selector(s) that prunecss removed (${esc(Object.entries(cmp.keptOnlyByOther.byCategory).map(([k, v]) => `${k}: ${v.count}`).join(', '))}). Most come from names PurgeCSS finds anywhere in the text (scripts, data attributes, prose) while prunecss reads only class attributes.`);
+    if (purgeOnly) losses.push(`- **${c.name}**: PurgeCSS kept ${purgeOnly} selector(s) that prunecss removed (${esc(Object.entries(cmp.keptOnlyByOther.byCategory).map(([k, v]) => `${k}: ${v.count}`).join(', '))}). Check the examples: PurgeCSS splits names such as \`bg-green-400/50\` into parts, so it can keep the rule for a part the page does not use.`);
   }
   L.push(...(losses.length ? losses : ['- Nothing measured here.']));
   L.push('');
-  L.push('Not measured, and known gaps: prunecss has no safelist yet (PurgeCSS does; the harness gives both tools none), does not see classes built in JavaScript or framework syntaxes such as `className={clsx(...)}`, `:class`, `class:name`, does not read `id=` attributes, and has no glob or config support yet (the harness passes explicit file lists to both tools). prunecss always keeps tag, attribute and pseudo-only selectors; PurgeCSS removes tags whose names never appear in the text.');
+  L.push('Not measured, and known gaps: both tools run with no safelist and with explicit file lists. prunecss always keeps tag, attribute and pseudo-only selectors (PurgeCSS removes tags whose names never appear in the text), which is most of the size difference. The static-DOM check cannot see classes added by JavaScript at runtime, so it undercounts what a page needs; a browser coverage run would be the next step.');
   L.push('');
   return `${L.join('\n')}\n`;
 }

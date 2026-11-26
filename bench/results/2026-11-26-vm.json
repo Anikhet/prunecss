@@ -1,0 +1,3387 @@
+{
+ "schema": 1,
+ "label": "indicative - shared cloud container",
+ "settings": {
+  "quick": false,
+  "hyperfine": {
+   "warmup": 3,
+   "runs": 10,
+   "shell": "none (-N)"
+  },
+  "tinybench": {
+   "time": 5000,
+   "warmupTime": 1000,
+   "iterations": 10
+  },
+  "rssRuns": 10
+ },
+ "environment": {
+  "date": "2026-11-26T21:00:23.941Z",
+  "host": "vm",
+  "hardware": {
+   "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "logicalCpus": 4,
+   "memoryGiB": 15.7,
+   "hypervisor": "KVM",
+   "governor": "unavailable (no cpufreq: VM or container)",
+   "noTurbo": "unavailable",
+   "loadAvg": [
+    1.01,
+    0.92,
+    1.18
+   ]
+  },
+  "os": {
+   "platform": "linux x64",
+   "kernel": "6.18.44-fc-v880",
+   "distro": "Ubuntu 24.04.5 LTS"
+  },
+  "versions": {
+   "prunecss": "prunecss 0.1.0",
+   "prunecssGitCommit": "a66faef1c7d392f1be8f60c22dffdf7c8047d7d2",
+   "prunecssGitDirty": false,
+   "purgecss": "9.1.0",
+   "node": "v22.23.5",
+   "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+   "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)",
+   "hyperfine": "hyperfine 2.0.0",
+   "tinybench": "6.2.5",
+   "minifier": "lightningcss 1.33.0 (node API, minify: true, errorRecovery: true)",
+   "postcss": "8.5.33",
+   "postcssSelectorParser": "7.2.1",
+   "cssSelect": "6.0.0",
+   "htmlparser2": "10.0.0",
+   "tailwindcssCli": "4.3.5",
+   "bootstrap": "5.3.8",
+   "bulma": "1.0.4",
+   "peakRssTool": "GNU time (/usr/bin/time -f %M)"
+  }
+ },
+ "nodeStartup": [
+  {
+   "command": "node -e \"\"",
+   "mean": 0.023905219499999998,
+   "stddev": 0.001151631714949633,
+   "median": 0.0241398065,
+   "min": 0.022012899000000002,
+   "max": 0.025524300000000003,
+   "user": 0.015600899999999997,
+   "system": 0.0082605,
+   "runs": 10,
+   "times": [
+    0.022443355,
+    0.023899872000000003,
+    0.024504305,
+    0.025171183000000003,
+    0.024436445,
+    0.025524300000000003,
+    0.022845503000000003,
+    0.023834592,
+    0.024379741,
+    0.022012899000000002
+   ],
+   "hyperfinePeakRssMedianKB": 36820
+  },
+  {
+   "command": "node -e \"require('purgecss')\"",
+   "mean": 0.0637501226,
+   "stddev": 0.004475250536707618,
+   "median": 0.062212139,
+   "min": 0.060570289000000006,
+   "max": 0.075480105,
+   "user": 0.061262399999999995,
+   "system": 0.013322599999999999,
+   "runs": 10,
+   "times": [
+    0.060721578000000005,
+    0.063465467,
+    0.065147067,
+    0.060570289000000006,
+    0.061659681,
+    0.075480105,
+    0.061278649000000004,
+    0.062764597,
+    0.065363611,
+    0.061050182
+   ],
+   "hyperfinePeakRssMedianKB": 49360
+  }
+ ],
+ "corpora": [
+  {
+   "name": "bootstrap",
+   "description": "Bootstrap 5.3.8 dist/css/bootstrap.css vs the 34 example pages (site/src/assets/examples/*/index.astro) from twbs/bootstrap@v5.3.8",
+   "input": {
+    "cssBytes": 280311,
+    "cssSha256": "4a50207b956a4ab943640ee993118b554a34e96a23261cfe58b9aa1807a7849b",
+    "contentFiles": 34,
+    "contentBytes": 375273,
+    "size": {
+     "raw": 280311,
+     "minified": 228703,
+     "gzip": 30387,
+     "brotli": 22533
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/bootstrap/bootstrap.css --content corpus/bootstrap/examples/album/index.astro corpus/bootstrap/examples/badges/index.astro ... (40 args)",
+     "outputSha256": "d38963e7f19d8f4c03beeb1a70aa0116f99aa00ea52382af31eb5fd15dc49a3c",
+     "size": {
+      "raw": 135401,
+      "minified": 114885,
+      "gzip": 18687,
+      "brotli": 15991
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "prunecss",
+      "mean": 0.0176334401,
+      "stddev": 0.001802368290338788,
+      "median": 0.0170842165,
+      "min": 0.016129486000000002,
+      "max": 0.022057676000000002,
+      "user": 0.0170409,
+      "system": 0.006895599999999999,
+      "runs": 10,
+      "times": [
+       0.017373323,
+       0.022057676000000002,
+       0.018912303000000002,
+       0.016362230000000002,
+       0.016674991,
+       0.016225404000000002,
+       0.016129486000000002,
+       0.017493439,
+       0.018310439,
+       0.016795110000000002
+      ],
+      "hyperfinePeakRssMedianKB": 13220
+     },
+     "peakRss": {
+      "medianKB": 13320,
+      "minKB": 13208,
+      "maxKB": 13620,
+      "samplesKB": [
+       13208,
+       13216,
+       13232,
+       13248,
+       13280,
+       13320,
+       13328,
+       13336,
+       13484,
+       13620
+      ]
+     }
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/bootstrap/bootstrap.css --content corpus/bootstrap/examples/album/index.astro ... (41 args)",
+     "outputSha256": "acd80b742c2a99bfd97a070c076fad7fed228a293031193333061c530dca2160",
+     "size": {
+      "raw": 135629,
+      "minified": 114091,
+      "gzip": 18499,
+      "brotli": 15792
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss",
+      "mean": 0.23742731590000005,
+      "stddev": 0.011379019362316667,
+      "median": 0.234428295,
+      "min": 0.22778436500000002,
+      "max": 0.267764624,
+      "user": 0.38250249999999997,
+      "system": 0.0606287,
+      "runs": 10,
+      "times": [
+       0.23093068700000002,
+       0.231704817,
+       0.234090127,
+       0.23835265400000002,
+       0.23100510500000002,
+       0.267764624,
+       0.22778436500000002,
+       0.24140389,
+       0.236470427,
+       0.234766463
+      ],
+      "hyperfinePeakRssMedianKB": 82536
+     },
+     "peakRss": {
+      "medianKB": 84472,
+      "minKB": 82508,
+      "maxKB": 89448,
+      "samplesKB": [
+       82508,
+       82992,
+       83764,
+       83868,
+       84296,
+       84472,
+       84840,
+       85224,
+       85332,
+       89448
+      ]
+     },
+     "inProcessApi": {
+      "mean": 0.05324554867021275,
+      "stddev": 0.008224808861941171,
+      "median": 0.050541922000000114,
+      "min": 0.04547050399999989,
+      "max": 0.100337446,
+      "samples": 94,
+      "times": [
+       0.04547050399999989,
+       0.04576743099999999,
+       0.04582028699999955,
+       0.04591039300000011,
+       0.04612460100000044,
+       0.04624869399999989,
+       0.046497683999999484,
+       0.04682630800000016,
+       0.046901308999999856,
+       0.04698155600000064,
+       0.047077744000000164,
+       0.047182676999999784,
+       0.04744778700000006,
+       0.04755041499999993,
+       0.04761382499999991,
+       0.047637831000000005,
+       0.047673072999999934,
+       0.047776728000000275,
+       0.04798337099999935,
+       0.04799026499999991,
+       0.04799043000000074,
+       0.04820568300000014,
+       0.048214850000000295,
+       0.04825578900000028,
+       0.04825711000000001,
+       0.04826042400000006,
+       0.04832487399999991,
+       0.04837401000000045,
+       0.04842984699999943,
+       0.048643770000000135,
+       0.048645354999999654,
+       0.048752625999999966,
+       0.04876775499999985,
+       0.04884682899999984,
+       0.04891928000000007,
+       0.04894980900000064,
+       0.04919186899999977,
+       0.049262087000000065,
+       0.04936614299999974,
+       0.049438322999999854,
+       0.049473290999999336,
+       0.04996713900000031,
+       0.050172094000000014,
+       0.05020243600000003,
+       0.05027914699999974,
+       0.05037255100000016,
+       0.05045064000000002,
+       0.0506332040000002,
+       0.050640408999999637,
+       0.050855526999999935,
+       0.050895376999999825,
+       0.05101796899999954,
+       0.05119536100000005,
+       0.05131178099999988,
+       0.05154382999999962,
+       0.051612552999999936,
+       0.05174175699999978,
+       0.051968847000000096,
+       0.05297211799999968,
+       0.05334155500000043,
+       0.05335618999999997,
+       0.05340503999999965,
+       0.05356611800000019,
+       0.053659553000000415,
+       0.0539759039999999,
+       0.05397736200000054,
+       0.05450303799999983,
+       0.05484988599999997,
+       0.05492287899999974,
+       0.05504300899999998,
+       0.055126847,
+       0.05575618500000019,
+       0.055864099000000354,
+       0.056049122000000354,
+       0.05673885800000016,
+       0.05681032499999992,
+       0.05686015800000041,
+       0.056919944999999646,
+       0.058511621999999985,
+       0.05868899699999974,
+       0.05875617999999986,
+       0.05961773800000037,
+       0.06156018300000005,
+       0.06277152800000022,
+       0.06342371000000002,
+       0.06563565000000017,
+       0.06609280699999999,
+       0.06818559600000026,
+       0.0689826979999998,
+       0.0694338459999999,
+       0.07242810000000009,
+       0.07335200699999996,
+       0.07369201699999985,
+       0.100337446
+      ],
+      "outputBytes": 135626
+     }
+    }
+   },
+   "correctness": {
+    "inputSelectors": 2852,
+    "kept": {
+     "prunecss": 1054,
+     "purgecss": 1040
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 1040,
+      "keptOnlyByPrunecss": {
+       "count": 14,
+       "byCategory": {
+        "attribute": {
+         "count": 7,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ".dropdown-menu-end[data-bs-popper]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".dropdown-menu[data-bs-popper]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".dropend .dropdown-menu[data-bs-popper]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".dropstart .dropdown-menu[data-bs-popper]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".dropup .dropdown-menu[data-bs-popper]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "[type=reset]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "[type=reset]:not(:disabled)",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "tag-only": {
+         "count": 7,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "iframe",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "kbd",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "kbd kbd",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "optgroup",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "output",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "samp",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "summary",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 0,
+       "byCategory": {}
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 1798,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 1812,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     }
+    },
+    "staticallyUnmatchedKept": {
+     "prunecss": {
+      "count": 136,
+      "byCategory": {
+       "tag-only": 15,
+       "class": 64,
+       "attribute": 18,
+       "pseudo": 22,
+       "functional": 17
+      }
+     },
+     "purgecss": {
+      "count": 122,
+      "byCategory": {
+       "tag-only": 8,
+       "class": 64,
+       "attribute": 11,
+       "pseudo": 22,
+       "functional": 17
+      }
+     }
+    }
+   }
+  },
+  {
+   "name": "bulma",
+   "description": "Bulma 1.0.4 css/bulma.css vs 50 documentation pages (docs/documentation/**/*.html) from jgthms/bulma@1.0.4",
+   "input": {
+    "cssBytes": 763923,
+    "cssSha256": "ee66316c24a2f62971913bce50e10847349b9cd6d05538ca54825589b75b5901",
+    "contentFiles": 50,
+    "contentBytes": 442573,
+    "size": {
+     "raw": 763923,
+     "minified": 682662,
+     "gzip": 64895,
+     "brotli": 36207
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/bulma/bulma.css --content corpus/bulma/docs/columns/basics.html corpus/bulma/docs/columns/gap.html ... (56 args)",
+     "outputSha256": "28851c67336d54b227ddce33ec6b179227a1a48f0430fe2f0581affdcdb47c98",
+     "size": {
+      "raw": 441812,
+      "minified": 401209,
+      "gzip": 43957,
+      "brotli": 25024
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "prunecss",
+      "mean": 0.035612705800000005,
+      "stddev": 0.005168374930744475,
+      "median": 0.0334700275,
+      "min": 0.030152363,
+      "max": 0.045921134,
+      "user": 0.027934499999999994,
+      "system": 0.0137988,
+      "runs": 10,
+      "times": [
+       0.030152363,
+       0.031450173000000005,
+       0.045921134,
+       0.035769462,
+       0.033294924000000004,
+       0.042962148000000006,
+       0.032701642,
+       0.037830847,
+       0.032399234,
+       0.033645131
+      ],
+      "hyperfinePeakRssMedianKB": 19552
+     },
+     "peakRss": {
+      "medianKB": 19692,
+      "minKB": 19464,
+      "maxKB": 19852,
+      "samplesKB": [
+       19464,
+       19560,
+       19640,
+       19660,
+       19668,
+       19692,
+       19692,
+       19712,
+       19720,
+       19852
+      ]
+     }
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/bulma/bulma.css --content corpus/bulma/docs/columns/basics.html ... (57 args)",
+     "outputSha256": "16d2c980439e2065eb20c75163db245e7d9275305ffacfedaf38d27eb085858a",
+     "size": {
+      "raw": 372351,
+      "minified": 335573,
+      "gzip": 38274,
+      "brotli": 24912
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss",
+      "mean": 0.3204339584,
+      "stddev": 0.012198151865887318,
+      "median": 0.3208981825,
+      "min": 0.299375642,
+      "max": 0.33671395800000004,
+      "user": 0.5664674,
+      "system": 0.07746689999999999,
+      "runs": 10,
+      "times": [
+       0.31165259300000003,
+       0.299375642,
+       0.33671395800000004,
+       0.319003024,
+       0.332085966,
+       0.322793341,
+       0.313389356,
+       0.32620122500000004,
+       0.308819921,
+       0.33430455800000003
+      ],
+      "hyperfinePeakRssMedianKB": 108484
+     },
+     "peakRss": {
+      "medianKB": 104656,
+      "minKB": 102940,
+      "maxKB": 107388,
+      "samplesKB": [
+       102940,
+       103544,
+       103556,
+       104204,
+       104612,
+       104656,
+       104868,
+       104940,
+       106012,
+       107388
+      ]
+     },
+     "inProcessApi": {
+      "mean": 0.09624731336538461,
+      "stddev": 0.012750950436402947,
+      "median": 0.09131504450000011,
+      "min": 0.08292363699999987,
+      "max": 0.14112840099999993,
+      "samples": 52,
+      "times": [
+       0.08292363699999987,
+       0.08333442400000013,
+       0.084142065,
+       0.08549131400000033,
+       0.08553270500000008,
+       0.08610502599999972,
+       0.08631712799999969,
+       0.08636178100000053,
+       0.08690275899999961,
+       0.08699422000000004,
+       0.08706437699999993,
+       0.08712008900000001,
+       0.08731495399999949,
+       0.08732594100000006,
+       0.08789462099999991,
+       0.0882757789999996,
+       0.08879150300000015,
+       0.08884261400000014,
+       0.0888852420000003,
+       0.08906742699999995,
+       0.08919250099999954,
+       0.08923914499999955,
+       0.08927101800000037,
+       0.08972838100000036,
+       0.08980875900000002,
+       0.09061731099999998,
+       0.09201277800000025,
+       0.09236010600000008,
+       0.09315826000000016,
+       0.09490340100000003,
+       0.09538579499999923,
+       0.09576909999999998,
+       0.09648507800000015,
+       0.09649270100000013,
+       0.09649654899999996,
+       0.09666644999999971,
+       0.0967996519999997,
+       0.09747064899999987,
+       0.09799128299999985,
+       0.09854643899999974,
+       0.10289242000000012,
+       0.10487802300000021,
+       0.10879579899999998,
+       0.10930926999999974,
+       0.10990645600000017,
+       0.11358946200000036,
+       0.11431886000000031,
+       0.11449286299999949,
+       0.11655531799999995,
+       0.12195893699999988,
+       0.13395152400000007,
+       0.14112840099999993
+      ],
+      "outputBytes": 372344
+     }
+    }
+   },
+   "correctness": {
+    "inputSelectors": 4915,
+    "kept": {
+     "prunecss": 1851,
+     "purgecss": 1839
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 1839,
+      "keptOnlyByPrunecss": {
+       "count": 12,
+       "byCategory": {
+        "pseudo": {
+         "count": 6,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "has-background-text.is-hoverable:active",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "has-background-text.is-hoverable:focus-visible",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "has-background-text.is-hoverable:hover",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "has-text-text.is-hoverable:active",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "has-text-text.is-hoverable:focus-visible",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "has-text-text.is-hoverable:hover",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "tag-only": {
+         "count": 4,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "hgroup",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "legend",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "optgroup",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "video",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "attribute": {
+         "count": 2,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "[data-theme=dark]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "[data-theme=light]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 0,
+       "byCategory": {}
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 3064,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 3076,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     }
+    },
+    "staticallyUnmatchedKept": {
+     "prunecss": {
+      "count": 736,
+      "byCategory": {
+       "attribute": 72,
+       "tag-only": 6,
+       "class": 437,
+       "pseudo": 215,
+       "functional": 6
+      }
+     },
+     "purgecss": {
+      "count": 724,
+      "byCategory": {
+       "tag-only": 2,
+       "class": 437,
+       "attribute": 70,
+       "pseudo": 209,
+       "functional": 6
+      }
+     }
+    }
+   }
+  },
+  {
+   "name": "tailwind",
+   "description": "Tailwind v4 build (@tailwindcss/cli, broad @source inline() safelist) vs 40 generated pages using variants, fractions and arbitrary values",
+   "input": {
+    "cssBytes": 4520800,
+    "cssSha256": "73164aa709bb52cf51a25c9bfe67df7f0ad890c72c9a8a43f38e43e196b46e74",
+    "contentFiles": 40,
+    "contentBytes": 479088,
+    "size": {
+     "raw": 4520800,
+     "minified": 3692073,
+     "gzip": 257592,
+     "brotli": 92901
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/tailwind/tailwind.css --content corpus/tailwind/pages/page-000.html corpus/tailwind/pages/page-001.html ... (46 args)",
+     "outputSha256": "fda4b66bb4375462ba269d40a591aef0cd28c433aa055c84393e13b7b7afe6b2",
+     "size": {
+      "raw": 108721,
+      "minified": 84555,
+      "gzip": 13532,
+      "brotli": 9755
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "prunecss",
+      "mean": 0.1564658403,
+      "stddev": 0.0075591469976912,
+      "median": 0.154242538,
+      "min": 0.145360353,
+      "max": 0.16909285200000002,
+      "user": 0.11482890000000001,
+      "system": 0.0468349,
+      "runs": 10,
+      "times": [
+       0.151855142,
+       0.161834354,
+       0.153761056,
+       0.164925064,
+       0.150746813,
+       0.145360353,
+       0.16195145900000002,
+       0.16909285200000002,
+       0.15040729,
+       0.15472402000000002
+      ],
+      "hyperfinePeakRssMedianKB": 88592
+     },
+     "peakRss": {
+      "medianKB": 88596,
+      "minKB": 88452,
+      "maxKB": 88772,
+      "samplesKB": [
+       88452,
+       88524,
+       88524,
+       88548,
+       88588,
+       88596,
+       88608,
+       88620,
+       88672,
+       88772
+      ]
+     }
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/tailwind/tailwind.css --content corpus/tailwind/pages/page-000.html ... (47 args)",
+     "outputSha256": "f67a20b19a5a2339fa73002016fe7f7700e38579cc2b190b2ad9003422f43a43",
+     "size": {
+      "raw": 68782,
+      "minified": 54571,
+      "gzip": 9676,
+      "brotli": 7073
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss",
+      "mean": 0.8506482359000002,
+      "stddev": 0.04493080235158386,
+      "median": 0.8429897900000001,
+      "min": 0.797677847,
+      "max": 0.949837746,
+      "user": 1.3032395,
+      "system": 0.1264477,
+      "runs": 10,
+      "times": [
+       0.874846102,
+       0.858649478,
+       0.812821114,
+       0.797677847,
+       0.8273404990000001,
+       0.8131764370000001,
+       0.835282437,
+       0.949837746,
+       0.8506971430000001,
+       0.886153556
+      ],
+      "hyperfinePeakRssMedianKB": 170030
+     },
+     "peakRss": {
+      "medianKB": 170732,
+      "minKB": 166372,
+      "maxKB": 172636,
+      "samplesKB": [
+       166372,
+       167520,
+       168788,
+       169492,
+       170556,
+       170732,
+       171100,
+       172228,
+       172456,
+       172636
+      ]
+     },
+     "inProcessApi": {
+      "mean": 0.6083342175999998,
+      "stddev": 0.018803074243279847,
+      "median": 0.60671597,
+      "min": 0.5803133639999997,
+      "max": 0.6371816819999995,
+      "samples": 10,
+      "times": [
+       0.5803133639999997,
+       0.5875632660000001,
+       0.59306746,
+       0.6015218830000003,
+       0.6019747059999999,
+       0.611457234,
+       0.6160881039999999,
+       0.6226111469999996,
+       0.63156333,
+       0.6371816819999995
+      ],
+      "outputBytes": 68782
+     }
+    },
+    "purgecss-tailwind-extractor": {
+     "label": "purgecss (tailwind-extractor)",
+     "command": "node node_modules/purgecss/bin/purgecss.js --config config/purgecss-tailwind.config.mjs --css corpus/tailwind/tailwind.css ... (49 args)",
+     "outputSha256": "8a67ea4dfe2596353169a5e87fd44085220fad2c84c0279c5248b0760b08563c",
+     "size": {
+      "raw": 105400,
+      "minified": 81807,
+      "gzip": 12878,
+      "brotli": 9196
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss (tailwind-extractor)",
+      "mean": 0.8758315616000001,
+      "stddev": 0.044204071639273826,
+      "median": 0.862402007,
+      "min": 0.8094921970000001,
+      "max": 0.9644076520000001,
+      "user": 1.31561,
+      "system": 0.1374183,
+      "runs": 10,
+      "times": [
+       0.8544673100000001,
+       0.881514267,
+       0.8693501250000001,
+       0.9211536400000001,
+       0.8094921970000001,
+       0.9644076520000001,
+       0.8554538890000001,
+       0.8479141490000001,
+       0.8493911780000001,
+       0.905171209
+      ],
+      "hyperfinePeakRssMedianKB": 169782
+     },
+     "peakRss": {
+      "medianKB": 169736,
+      "minKB": 166784,
+      "maxKB": 171252,
+      "samplesKB": [
+       166784,
+       167136,
+       167836,
+       168048,
+       169000,
+       169736,
+       169824,
+       169984,
+       170248,
+       171252
+      ]
+     },
+     "inProcessApi": {
+      "mean": 0.6173288578000001,
+      "stddev": 0.027937022002741514,
+      "median": 0.6202962265,
+      "min": 0.5831023530000002,
+      "max": 0.658131398,
+      "samples": 10,
+      "times": [
+       0.5831023530000002,
+       0.5831592970000001,
+       0.5840261200000004,
+       0.6038322680000001,
+       0.6118549560000002,
+       0.628737497,
+       0.6380306970000001,
+       0.6409012689999998,
+       0.6415127229999998,
+       0.658131398
+      ],
+      "outputBytes": 105400
+     }
+    }
+   },
+   "correctness": {
+    "inputSelectors": 37541,
+    "kept": {
+     "prunecss": 1217,
+     "purgecss": 811,
+     "purgecss-tailwind-extractor": 1148
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 807,
+      "keptOnlyByPrunecss": {
+       "count": 410,
+       "byCategory": {
+        "escaped": {
+         "count": 379,
+         "matchStaticDom": 376,
+         "examples": [
+          {
+           "selector": ".hover\\:bg-amber-400:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-amber-400"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-amber-50:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-amber-50"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-amber-950:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-amber-950"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-blue-900:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-blue-900"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-emerald-200:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-emerald-200"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-emerald-500:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-emerald-500"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-gray-100:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-gray-100"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-gray-600:hover",
+           "context": "@layer utilities @media (hover:hover)",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-gray-600"
+           ]
+          }
+         ]
+        },
+        "tag-only": {
+         "count": 27,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "audio",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "b",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "canvas",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "code",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "embed",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "h2",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "h4",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "h5",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "attribute": {
+         "count": 4,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ":where(select:is([multiple],[size])) optgroup",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ":where(select:is([multiple],[size])) optgroup option",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "abbr:where([title])",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "input:where([type=button],[type=reset],[type=submit])",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 4,
+       "byCategory": {
+        "class": {
+         "count": 3,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ".bg-green-400",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [
+            ".bg-green-400"
+           ],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".bg-sky-200",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [
+            ".bg-sky-200"
+           ],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".w-1",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [
+            ".w-1"
+           ],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "rewritten": {
+         "count": 1,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "input:where([type=button],[type=submit])",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      }
+     },
+     "prunecss-vs-purgecss-tailwind-extractor": {
+      "keptByBoth": 1148,
+      "keptOnlyByPrunecss": {
+       "count": 69,
+       "byCategory": {
+        "class": {
+         "count": 33,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ".col-span-2",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".col-span-2"
+           ]
+          },
+          {
+           "selector": ".col-span-3",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".col-span-3"
+           ]
+          },
+          {
+           "selector": ".col-span-4",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".col-span-4"
+           ]
+          },
+          {
+           "selector": ".col-span-6",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".col-span-6"
+           ]
+          },
+          {
+           "selector": ".gap-x-12",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".gap-x-12"
+           ]
+          },
+          {
+           "selector": ".gap-x-3",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".gap-x-3"
+           ]
+          },
+          {
+           "selector": ".gap-x-8",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".gap-x-8"
+           ]
+          },
+          {
+           "selector": ".grid-cols-3",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".grid-cols-3"
+           ]
+          }
+         ]
+        },
+        "tag-only": {
+         "count": 28,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "audio",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "b",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "canvas",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "code",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "embed",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "h2",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "h4",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "h5",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "attribute": {
+         "count": 4,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ":where(select:is([multiple],[size])) optgroup",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ":where(select:is([multiple],[size])) optgroup option",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "abbr:where([title])",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": "input:where([type=button],[type=reset],[type=submit])",
+           "context": "@layer base",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "escaped": {
+         "count": 4,
+         "matchStaticDom": 1,
+         "examples": [
+          {
+           "selector": ".\\[\\&\\>span\\]\\:ml-1>span",
+           "context": "@layer utilities",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".[&>span]:ml-1"
+           ]
+          },
+          {
+           "selector": ".aria-disabled\\:cursor-not-allowed[aria-disabled=true]",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".data-\\[loading\\=true\\]\\:opacity-50[data-loading=true]",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".w-1\\/3",
+           "context": "@layer utilities",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".w-1/3"
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss-tailwind-extractor",
+      "keptOnlyByOther": {
+       "count": 0,
+       "byCategory": {}
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 36324,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 36731,
+      "matchingStaticDom": 376,
+      "exact": 376,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {
+       "escaped": 376
+      },
+      "examples": [
+       {
+        "key": "@layer utilities | .-m-1\\.5",
+        "selector": ".-m-1\\.5",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".-m-1.5"
+        ]
+       },
+       {
+        "key": "@layer utilities | .-m-2\\.5",
+        "selector": ".-m-2\\.5",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".-m-2.5"
+        ]
+       },
+       {
+        "key": "@layer utilities | .h-\\[10px\\]",
+        "selector": ".h-\\[10px\\]",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".h-[10px]"
+        ]
+       },
+       {
+        "key": "@layer utilities | .min-h-\\[calc\\(100vh-4rem\\)\\]",
+        "selector": ".min-h-\\[calc\\(100vh-4rem\\)\\]",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".min-h-[calc(100vh-4rem)]"
+        ]
+       },
+       {
+        "key": "@layer utilities | .w-1\\/2",
+        "selector": ".w-1\\/2",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".w-1/2"
+        ]
+       },
+       {
+        "key": "@layer utilities | .w-\\[36rem\\]",
+        "selector": ".w-\\[36rem\\]",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".w-[36rem]"
+        ]
+       },
+       {
+        "key": "@layer utilities | .max-w-\\[24rem\\]",
+        "selector": ".max-w-\\[24rem\\]",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".max-w-[24rem]"
+        ]
+       },
+       {
+        "key": "@layer utilities | .rotate-\\[30deg\\]",
+        "selector": ".rotate-\\[30deg\\]",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".rotate-[30deg]"
+        ]
+       },
+       {
+        "key": "@layer utilities | .grid-cols-\\[200px_1fr\\]",
+        "selector": ".grid-cols-\\[200px_1fr\\]",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".grid-cols-[200px_1fr]"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-\\[\\#1da1f2\\]",
+        "selector": ".bg-\\[\\#1da1f2\\]",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-[#1da1f2]"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-amber-300\\/80",
+        "selector": ".bg-amber-300\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-amber-300/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-amber-500\\/80",
+        "selector": ".bg-amber-500\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-amber-500/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-amber-700\\/80",
+        "selector": ".bg-amber-700\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-amber-700/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-blue-500\\/80",
+        "selector": ".bg-blue-500\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-blue-500/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-emerald-50\\/80",
+        "selector": ".bg-emerald-50\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-emerald-50/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-emerald-500\\/80",
+        "selector": ".bg-emerald-500\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-emerald-500/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-emerald-600\\/80",
+        "selector": ".bg-emerald-600\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-emerald-600/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-green-400\\/80",
+        "selector": ".bg-green-400\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-green-400/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-green-700\\/80",
+        "selector": ".bg-green-700\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-green-700/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-green-950\\/80",
+        "selector": ".bg-green-950\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-green-950/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-indigo-500\\/80",
+        "selector": ".bg-indigo-500\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-indigo-500/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-indigo-600\\/80",
+        "selector": ".bg-indigo-600\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-indigo-600/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-orange-200\\/80",
+        "selector": ".bg-orange-200\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-orange-200/80"
+        ]
+       },
+       {
+        "key": "@layer utilities | .bg-orange-400\\/80",
+        "selector": ".bg-orange-400\\/80",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".bg-orange-400/80"
+        ]
+       }
+      ]
+     },
+     "purgecss-tailwind-extractor": {
+      "removed": 36393,
+      "matchingStaticDom": 1,
+      "exact": 1,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {
+       "escaped": 1
+      },
+      "examples": [
+       {
+        "key": "@layer utilities | .\\[\\&\\>span\\]\\:ml-1>span",
+        "selector": ".\\[\\&\\>span\\]\\:ml-1>span",
+        "context": "@layer utilities",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".[&>span]:ml-1"
+        ]
+       }
+      ]
+     }
+    },
+    "staticallyUnmatchedKept": {
+     "prunecss": {
+      "count": 70,
+      "byCategory": {
+       "tag-only": 28,
+       "attribute": 5,
+       "class": 34,
+       "escaped": 3
+      }
+     },
+     "purgecss": {
+      "count": 40,
+      "byCategory": {
+       "tag-only": 1,
+       "rewritten": 1,
+       "attribute": 1,
+       "class": 37
+      }
+     },
+     "purgecss-tailwind-extractor": {
+      "count": 2,
+      "byCategory": {
+       "attribute": 1,
+       "class": 1
+      }
+     }
+    }
+   }
+  },
+  {
+   "name": "edge",
+   "description": "Hand-written edge cases (ids, tags, attributes, JS-added classes, Vue/JSX/Svelte syntax, escaped names); committed in corpus/edge",
+   "input": {
+    "cssBytes": 2268,
+    "cssSha256": "b48d42e889d49df1b57c40da601d1c18b41c9af33dafe4b095ca18b4ec3dacdf",
+    "contentFiles": 4,
+    "contentBytes": 1498,
+    "size": {
+     "raw": 2268,
+     "minified": 960,
+     "gzip": 597,
+     "brotli": 499
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/edge/styles.css --content corpus/edge/App.jsx corpus/edge/Toggle.svelte ... (10 args)",
+     "outputSha256": "0b948d74227cb193b27585e472f3d5eee9b4da0a420a21e2b23dfe3fce1c7544",
+     "size": {
+      "raw": 1230,
+      "minified": 922,
+      "gzip": 579,
+      "brotli": 484
+     },
+     "minifierWarnings": 0
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/edge/styles.css --content corpus/edge/App.jsx ... (11 args)",
+     "outputSha256": "85cd0c03132c0b8ca491c41f7429c1a934196aee778309e3a017ef8fd5a6cbc8",
+     "size": {
+      "raw": 1997,
+      "minified": 747,
+      "gzip": 484,
+      "brotli": 403
+     },
+     "minifierWarnings": 0
+    }
+   },
+   "correctness": {
+    "inputSelectors": 32,
+    "kept": {
+     "prunecss": 30,
+     "purgecss": 24
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 23,
+      "keptOnlyByPrunecss": {
+       "count": 7,
+       "byCategory": {
+        "escaped": {
+         "count": 5,
+         "matchStaticDom": 5,
+         "examples": [
+          {
+           "selector": ".\\!font-bold",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".!font-bold"
+           ]
+          },
+          {
+           "selector": ".hover\\:bg-red-500:hover",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".hover:bg-red-500"
+           ]
+          },
+          {
+           "selector": ".md\\:flex",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".md:flex"
+           ]
+          },
+          {
+           "selector": ".w-1\\/2",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".w-1/2"
+           ]
+          },
+          {
+           "selector": ".w-\\[10px\\]",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": [
+            ".w-[10px]"
+           ]
+          }
+         ]
+        },
+        "functional": {
+         "count": 1,
+         "matchStaticDom": 1,
+         "examples": [
+          {
+           "selector": ":is(.alert,.toast) .close",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        },
+        "tag-only": {
+         "count": 1,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": "blockquote",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 1,
+       "byCategory": {
+        "rewritten": {
+         "count": 1,
+         "matchStaticDom": 1,
+         "examples": [
+          {
+           "selector": ".alert .close",
+           "matchesStaticDom": true,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 2,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 9,
+      "matchingStaticDom": 6,
+      "exact": 6,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {
+       "escaped": 5,
+       "functional": 1
+      },
+      "examples": [
+       {
+        "key": " | .md\\:flex",
+        "selector": ".md\\:flex",
+        "context": "",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".md:flex"
+        ]
+       },
+       {
+        "key": " | .w-1\\/2",
+        "selector": ".w-1\\/2",
+        "context": "",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".w-1/2"
+        ]
+       },
+       {
+        "key": " | .w-\\[10px\\]",
+        "selector": ".w-\\[10px\\]",
+        "context": "",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".w-[10px]"
+        ]
+       },
+       {
+        "key": " | .hover\\:bg-red-500:hover",
+        "selector": ".hover\\:bg-red-500:hover",
+        "context": "",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".hover:bg-red-500"
+        ]
+       },
+       {
+        "key": " | .\\!font-bold",
+        "selector": ".\\!font-bold",
+        "context": "",
+        "approx": false,
+        "category": "escaped",
+        "notExtractedByPurgecss": [
+         ".!font-bold"
+        ]
+       },
+       {
+        "key": " | :is(.alert,.toast) .close",
+        "selector": ":is(.alert,.toast) .close",
+        "context": "",
+        "approx": false,
+        "category": "functional",
+        "notExtractedByPurgecss": []
+       }
+      ]
+     }
+    },
+    "staticallyUnmatchedKept": {
+     "prunecss": {
+      "count": 7,
+      "byCategory": {
+       "tag-only": 1,
+       "class": 6
+      }
+     },
+     "purgecss": {
+      "count": 6,
+      "byCategory": {
+       "class": 6
+      }
+     }
+    }
+   }
+  },
+  {
+   "name": "synthetic-small",
+   "description": "Synthetic: 1,000 rules x 10 HTML files (fixed seed)",
+   "input": {
+    "cssBytes": 41080,
+    "cssSha256": "d33538abe50dc70f1e0a51a871949f45415279eb266df96f4cda37737ed79d49",
+    "contentFiles": 10,
+    "contentBytes": 80939,
+    "size": {
+     "raw": 41080,
+     "minified": 35538,
+     "gzip": 5297,
+     "brotli": 4832
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/synthetic/small/styles.css --content corpus/synthetic/small/content/f00000.html corpus/synthetic/small/content/f00001.html ... (16 args)",
+     "outputSha256": "c88bc9b7b66b1d226810c2d24a36eee3c41000961e385c6024a61539acff4961",
+     "size": {
+      "raw": 9777,
+      "minified": 6501,
+      "gzip": 1053,
+      "brotli": 948
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "prunecss",
+      "mean": 0.0060167883,
+      "stddev": 0.0003419883990417251,
+      "median": 0.0059165425,
+      "min": 0.005521320000000001,
+      "max": 0.0066620180000000005,
+      "user": 0.00414,
+      "system": 0.0029889,
+      "runs": 10,
+      "times": [
+       0.005964604,
+       0.005765147,
+       0.005521320000000001,
+       0.005784775000000001,
+       0.006305546,
+       0.006074513,
+       0.005868481,
+       0.0066620180000000005,
+       0.005841894,
+       0.006379585
+      ],
+      "hyperfinePeakRssMedianKB": 7774
+     },
+     "peakRss": {
+      "medianKB": 7940,
+      "minKB": 7652,
+      "maxKB": 8148,
+      "samplesKB": [
+       7652,
+       7816,
+       7864,
+       7900,
+       7936,
+       7940,
+       8004,
+       8064,
+       8088,
+       8148
+      ]
+     }
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/synthetic/small/styles.css --content corpus/synthetic/small/content/f00000.html ... (17 args)",
+     "outputSha256": "b162d9ba5142b4a67385d4bcad7cf616b14ab30be2dbaeb0f9efe23841f4ad6b",
+     "size": {
+      "raw": 7375,
+      "minified": 6329,
+      "gzip": 1016,
+      "brotli": 910
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss",
+      "mean": 0.1469707676,
+      "stddev": 0.0044690896837515995,
+      "median": 0.145421631,
+      "min": 0.142652634,
+      "max": 0.15880965200000002,
+      "user": 0.181903,
+      "system": 0.03369,
+      "runs": 10,
+      "times": [
+       0.142652634,
+       0.14724014400000002,
+       0.14728243300000002,
+       0.14522573900000002,
+       0.15880965200000002,
+       0.148378687,
+       0.145591564,
+       0.144577371,
+       0.144697754,
+       0.145251698
+      ],
+      "hyperfinePeakRssMedianKB": 64442
+     },
+     "peakRss": {
+      "medianKB": 64600,
+      "minKB": 64020,
+      "maxKB": 65740,
+      "samplesKB": [
+       64020,
+       64132,
+       64288,
+       64496,
+       64532,
+       64600,
+       64832,
+       64852,
+       65576,
+       65740
+      ]
+     },
+     "inProcessApi": {
+      "mean": 0.013962241590529226,
+      "stddev": 0.0025262497102069873,
+      "median": 0.012938367999999627,
+      "min": 0.011595391999999947,
+      "max": 0.028821374000000104,
+      "samples": 359,
+      "times": [
+       0.011595391999999947,
+       0.0116012189999999,
+       0.01163163399999985,
+       0.01166232100000002,
+       0.011675928999999996,
+       0.011688786000000164,
+       0.011695927999999868,
+       0.011699754999999869,
+       0.011701696999999968,
+       0.011715225000000147,
+       0.011740301999999928,
+       0.011748452999999926,
+       0.011753335999999764,
+       0.011766448000000082,
+       0.011768773000000237,
+       0.01177597199999991,
+       0.011804477000000134,
+       0.011827215000000252,
+       0.011829764999999952,
+       0.011847784000000047,
+       0.011854898000000048,
+       0.01186237200000005,
+       0.011876633999999968,
+       0.011880024000000048,
+       0.011881541999999627,
+       0.011890986000000112,
+       0.011891123999999764,
+       0.01189141699999982,
+       0.011901703999999881,
+       0.011916973999999754,
+       0.01192149900000004,
+       0.011927110000000084,
+       0.011935629000000062,
+       0.011940245000000004,
+       0.01194026299999996,
+       0.011948147000000063,
+       0.011950481999999965,
+       0.011952569999999468,
+       0.011958253000000014,
+       0.011959559999999782,
+       0.011962762000000111,
+       0.01196729699999969,
+       0.01198016699999971,
+       0.01198149699999999,
+       0.011987788999999794,
+       0.011989442000000053,
+       0.0119908089999999,
+       0.011993962999999894,
+       0.012000323000000208,
+       0.012004394999999932,
+       0.012008295999999972,
+       0.012009135999999898,
+       0.012010904999999865,
+       0.012013707000000068,
+       0.012017412999999805,
+       0.012021164999999882,
+       0.012035881000000245,
+       0.012036219000000528,
+       0.012040594000000055,
+       0.012042731999999888,
+       0.012044025000000147,
+       0.012048291000000063,
+       0.01204923400000007,
+       0.012062691000000085,
+       0.012066462000000002,
+       0.01207121600000005,
+       0.012071294999999736,
+       0.012085703000000194,
+       0.012093184000000291,
+       0.012098013999999921,
+       0.012100568000000294,
+       0.012106325000000197,
+       0.012106407000000218,
+       0.012106423000000177,
+       0.012108294999999998,
+       0.012117058000000043,
+       0.012120046000000002,
+       0.012130713000000013,
+       0.012136956000000055,
+       0.012141362999999955,
+       0.012141642999999931,
+       0.012147297999999864,
+       0.012150011000000177,
+       0.01215409499999987,
+       0.012156795999999758,
+       0.01215808300000026,
+       0.012165729000000056,
+       0.01216815200000019,
+       0.01218061200000011,
+       0.012183302999999797,
+       0.012187968000000183,
+       0.012188329000000522,
+       0.012200525999999854,
+       0.012209597999999459,
+       0.012233737999999904,
+       0.012246609000000262,
+       0.012249418999999989,
+       0.012273897000000034,
+       0.012276249999999891,
+       0.012277859000000035,
+       0.012279219000000011,
+       0.012300323000000389,
+       0.012312556999999742,
+       0.012313125000000128,
+       0.012319663000000218,
+       0.012320314000000053,
+       0.012324289000000136,
+       0.012345580000000154,
+       0.012357971000000361,
+       0.012370901000000004,
+       0.012372795000000224,
+       0.01237338600000021,
+       0.012377788000000237,
+       0.01238213900000028,
+       0.012382963000000018,
+       0.012385557999999946,
+       0.012403002999999444,
+       0.012409881000000041,
+       0.012423748999999588,
+       0.012425992999999835,
+       0.012439959000000271,
+       0.012443169000000125,
+       0.012444075000000339,
+       0.012454139000000168,
+       0.01246274900000003,
+       0.012464502000000266,
+       0.012480153999999856,
+       0.012483604999999898,
+       0.012488197000000128,
+       0.01249129099999982,
+       0.01249199099999987,
+       0.012533871999999974,
+       0.01254510900000014,
+       0.012547104000000218,
+       0.012550889999999527,
+       0.012553165000000036,
+       0.012556208999999853,
+       0.012556421999999656,
+       0.012565948000000389,
+       0.01256758600000012,
+       0.012577968999999939,
+       0.012579674000000068,
+       0.012585003000000143,
+       0.012591832000000068,
+       0.012624491000000035,
+       0.01262789500000008,
+       0.012627940999999736,
+       0.012629007000000456,
+       0.012629091000000016,
+       0.01267579799999976,
+       0.012682640999999877,
+       0.012697841000000152,
+       0.01270474699999977,
+       0.012722760999999992,
+       0.012725310000000037,
+       0.012737238000000161,
+       0.012745061999999962,
+       0.012755584999999882,
+       0.012756521999999677,
+       0.012757634999999937,
+       0.012770688000000063,
+       0.012779742000000625,
+       0.012779884000000493,
+       0.01278180599999996,
+       0.012788954999999987,
+       0.012795810000000074,
+       0.012810737999999901,
+       0.012824203000000124,
+       0.01283628200000021,
+       0.012843847000000096,
+       0.012849220999999944,
+       0.012853357999999388,
+       0.01286118400000032,
+       0.012861606999999822,
+       0.012882128000000194,
+       0.01288435400000003,
+       0.012921031999999286,
+       0.012933371000000079,
+       0.012938055000000077,
+       0.012938367999999627,
+       0.01295572200000015,
+       0.012957388999999922,
+       0.01295770399999992,
+       0.012959450999999718,
+       0.012962359000000106,
+       0.012974065000000336,
+       0.012977315999999519,
+       0.01299021300000004,
+       0.013003490000000057,
+       0.013017377000000123,
+       0.013021784999999909,
+       0.013028702000000522,
+       0.013083467999999812,
+       0.013087771999999859,
+       0.01314945699999953,
+       0.013201974999999947,
+       0.013216841999999816,
+       0.013250223000000005,
+       0.013282517999999981,
+       0.01330240700000013,
+       0.013310089999999946,
+       0.013350032000000055,
+       0.013363210999999865,
+       0.013364967999999863,
+       0.013382775999999921,
+       0.013404713999999785,
+       0.013408739999999853,
+       0.013427594000000227,
+       0.013434637999999723,
+       0.013490072000000054,
+       0.01349187299999994,
+       0.013495710999999574,
+       0.013503552000000127,
+       0.01351853899999969,
+       0.013542425999999977,
+       0.013544530999999551,
+       0.013564271999999619,
+       0.013593095999999605,
+       0.013602986000000329,
+       0.013612948999999845,
+       0.013641294000000016,
+       0.013644236999999976,
+       0.013660950999999841,
+       0.01367840999999953,
+       0.013695111999999881,
+       0.013706672999999682,
+       0.013707552000000078,
+       0.01372027100000014,
+       0.013744777999999768,
+       0.013789174999999886,
+       0.013794231999999738,
+       0.013801958999999442,
+       0.013803062999999838,
+       0.013835918000000674,
+       0.013853755000000093,
+       0.013859459999999671,
+       0.013898320999999669,
+       0.013901288999999905,
+       0.013916131999999835,
+       0.013925869000000602,
+       0.013926648000000114,
+       0.013949064999999792,
+       0.014055523999999878,
+       0.014080227000000377,
+       0.0140986640000001,
+       0.014106130000000121,
+       0.014109915,
+       0.014142828000000008,
+       0.01416802000000007,
+       0.0141885699999998,
+       0.01420612600000004,
+       0.014233784000000015,
+       0.014242834999999558,
+       0.014297265000000153,
+       0.014322969000000284,
+       0.014353962000000138,
+       0.014362189999999827,
+       0.014456401000000368,
+       0.01445665099999951,
+       0.014467983999999887,
+       0.014609807000000728,
+       0.01463546899999983,
+       0.014688454999999977,
+       0.014694621000000097,
+       0.014717051000000538,
+       0.01475793900000008,
+       0.014762096000000384,
+       0.014762217999999848,
+       0.014770002000000204,
+       0.014783486000000266,
+       0.014784262000000126,
+       0.01482781999999952,
+       0.014855966999999965,
+       0.014873341999999866,
+       0.01497459500000059,
+       0.015076542000000245,
+       0.015126768000000084,
+       0.015131476000000475,
+       0.01513352599999962,
+       0.015155400999999983,
+       0.015197793999999704,
+       0.015219540999999481,
+       0.015327419000000191,
+       0.015473560000000362,
+       0.015473944000000074,
+       0.01550689500000044,
+       0.015524763000000347,
+       0.015598953999999821,
+       0.015804549999999834,
+       0.015819302999999764,
+       0.015842236999999842,
+       0.015962301999999907,
+       0.016003442000000177,
+       0.016045358000000304,
+       0.016150994999999967,
+       0.016164494999999987,
+       0.01625168499999927,
+       0.016374875999999858,
+       0.016430977999999867,
+       0.016514443000000028,
+       0.016518377999999757,
+       0.01652688900000021,
+       0.016553268000000117,
+       0.016556532999999946,
+       0.016608467999999904,
+       0.016645109000000047,
+       0.016653068999999958,
+       0.016669058999999833,
+       0.016798025000000053,
+       0.01684187600000041,
+       0.016873196000000007,
+       0.016896757999999863,
+       0.016931383000000095,
+       0.017130522000000384,
+       0.01743520399999943,
+       0.017457908999999744,
+       0.017491453999999976,
+       0.017496076999999787,
+       0.017529097000000094,
+       0.017631497000000308,
+       0.017638951000000135,
+       0.017641230000000178,
+       0.017659228999999867,
+       0.017744126999999936,
+       0.01781767000000036,
+       0.01791417099999944,
+       0.01792881099999977,
+       0.01798472600000014,
+       0.017988236000000143,
+       0.0180419239999992,
+       0.01806317500000023,
+       0.018082586999999876,
+       0.018183758000000126,
+       0.01823572200000035,
+       0.018244826000000103,
+       0.01826623900000004,
+       0.018277767999999923,
+       0.018364408999999797,
+       0.01840957900000012,
+       0.018411189999999807,
+       0.018712547000000086,
+       0.018851620999999794,
+       0.019039910999999847,
+       0.019430207999999765,
+       0.019529021000000285,
+       0.019655871999999363,
+       0.019908004999999774,
+       0.019944765999999618,
+       0.019999236999999993,
+       0.020020626999999878,
+       0.02018703000000005,
+       0.020598347000000104,
+       0.021142321999999693,
+       0.021195462000000588,
+       0.02184529199999997,
+       0.021846731999999973,
+       0.023727020000000265,
+       0.027057117999999717,
+       0.028821374000000104
+      ],
+      "outputBytes": 7375
+     }
+    }
+   },
+   "correctness": {
+    "inputSelectors": 918,
+    "kept": {
+     "prunecss": 158,
+     "purgecss": 154
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 154,
+      "keptOnlyByPrunecss": {
+       "count": 4,
+       "byCategory": {
+        "attribute": {
+         "count": 4,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ".u128[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u3[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u46[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u76[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 0,
+       "byCategory": {}
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 760,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 764,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     }
+    },
+    "staticallyUnmatchedKept": {}
+   }
+  },
+  {
+   "name": "synthetic-medium",
+   "description": "Synthetic: 10,000 rules x 100 HTML files (fixed seed)",
+   "input": {
+    "cssBytes": 422599,
+    "cssSha256": "48654367c104fe8df77e1abcff76958d3575576df795e2f8dc062a708b4477f6",
+    "contentFiles": 100,
+    "contentBytes": 844838,
+    "size": {
+     "raw": 422599,
+     "minified": 365734,
+     "gzip": 54231,
+     "brotli": 48909
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/synthetic/medium/styles.css --content corpus/synthetic/medium/content/f00000.html corpus/synthetic/medium/content/f00001.html ... (106 args)",
+     "outputSha256": "8be0a81332bbc714a0227d0acf9271b1fd5ee1ea693d0eb0561fdff97da0b1be",
+     "size": {
+      "raw": 96971,
+      "minified": 65692,
+      "gzip": 8524,
+      "brotli": 7828
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "prunecss",
+      "mean": 0.0320565928,
+      "stddev": 0.001840036194732461,
+      "median": 0.0315602075,
+      "min": 0.030337168,
+      "max": 0.036614532000000005,
+      "user": 0.03319,
+      "system": 0.0104087,
+      "runs": 10,
+      "times": [
+       0.032651187000000005,
+       0.032222141,
+       0.031456261,
+       0.030878361000000003,
+       0.030903578,
+       0.030676368000000002,
+       0.031664154,
+       0.036614532000000005,
+       0.033162178,
+       0.030337168
+      ],
+      "hyperfinePeakRssMedianKB": 23264
+     },
+     "peakRss": {
+      "medianKB": 23292,
+      "minKB": 23056,
+      "maxKB": 23452,
+      "samplesKB": [
+       23056,
+       23056,
+       23180,
+       23200,
+       23224,
+       23292,
+       23364,
+       23372,
+       23372,
+       23452
+      ]
+     }
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/synthetic/medium/styles.css --content corpus/synthetic/medium/content/f00000.html ... (107 args)",
+     "outputSha256": "cf258bd7898d7d96403d01fbac4cb6146d8a8242d0282c48318ef1cbc744474d",
+     "size": {
+      "raw": 73500,
+      "minified": 63426,
+      "gzip": 8258,
+      "brotli": 7596
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss",
+      "mean": 0.3840519069,
+      "stddev": 0.026757606202943974,
+      "median": 0.38497250000000005,
+      "min": 0.340643144,
+      "max": 0.425713174,
+      "user": 0.5981034999999999,
+      "system": 0.07968459999999998,
+      "runs": 10,
+      "times": [
+       0.396088577,
+       0.425713174,
+       0.418262203,
+       0.340643144,
+       0.371555312,
+       0.38123956200000003,
+       0.388705438,
+       0.35957104,
+       0.360936093,
+       0.39780452600000005
+      ],
+      "hyperfinePeakRssMedianKB": 108896
+     },
+     "peakRss": {
+      "medianKB": 108776,
+      "minKB": 107232,
+      "maxKB": 109708,
+      "samplesKB": [
+       107232,
+       107960,
+       108020,
+       108584,
+       108712,
+       108776,
+       108864,
+       109428,
+       109656,
+       109708
+      ]
+     },
+     "inProcessApi": {
+      "mean": 0.14583083451428575,
+      "stddev": 0.013600428096206292,
+      "median": 0.14170831500000008,
+      "min": 0.1301830170000003,
+      "max": 0.1862227240000002,
+      "samples": 35,
+      "times": [
+       0.1301830170000003,
+       0.13055320699999992,
+       0.13234658799999988,
+       0.13320726399999966,
+       0.13503003099999977,
+       0.136166381,
+       0.13682759999999985,
+       0.13689715000000002,
+       0.13701707799999985,
+       0.13703388300000005,
+       0.13730864699999984,
+       0.13888649700000041,
+       0.13897591499999998,
+       0.13939464100000076,
+       0.13946228599999994,
+       0.14001927999999997,
+       0.1415967139999998,
+       0.14170831500000008,
+       0.14224267299999974,
+       0.14420977800000037,
+       0.14498244200000043,
+       0.14525726400000008,
+       0.1453167080000003,
+       0.14542348300000002,
+       0.14852432500000032,
+       0.1490065300000001,
+       0.14963916100000005,
+       0.15022728999999982,
+       0.1527413590000001,
+       0.15466687700000012,
+       0.15842729400000008,
+       0.16776773299999967,
+       0.17406874300000005,
+       0.18274032999999962,
+       0.1862227240000002
+      ],
+      "outputBytes": 73500
+     }
+    }
+   },
+   "correctness": {
+    "inputSelectors": 9149,
+    "kept": {
+     "prunecss": 1529,
+     "purgecss": 1485
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 1485,
+      "keptOnlyByPrunecss": {
+       "count": 44,
+       "byCategory": {
+        "attribute": {
+         "count": 44,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ".u1091[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1111[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1121[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1188[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1194[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1229[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u131[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1341[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 0,
+       "byCategory": {}
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 7620,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 7664,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     }
+    },
+    "staticallyUnmatchedKept": {}
+   }
+  },
+  {
+   "name": "synthetic-large",
+   "description": "Synthetic: 50,000 rules x 500 HTML files (fixed seed)",
+   "input": {
+    "cssBytes": 2163762,
+    "cssSha256": "3a3d3a528e25695f9bd02682edfdfbc8d19cebea6938bab1cad332e4e5cbc6dd",
+    "contentFiles": 500,
+    "contentBytes": 4305141,
+    "size": {
+     "raw": 2163762,
+     "minified": 1877070,
+     "gzip": 294867,
+     "brotli": 258820
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/synthetic/large/styles.css --content corpus/synthetic/large/content/f00000.html corpus/synthetic/large/content/f00001.html ... (506 args)",
+     "outputSha256": "c84d530b369f92803032eec8d8398eb1d54de99f743d023a85730feeb71b64e5",
+     "size": {
+      "raw": 476645,
+      "minified": 321172,
+      "gzip": 42702,
+      "brotli": 38662
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "prunecss",
+      "mean": 0.15758555170000002,
+      "stddev": 0.014212986725152355,
+      "median": 0.1551362805,
+      "min": 0.141817142,
+      "max": 0.187362106,
+      "user": 0.1695177,
+      "system": 0.052645399999999995,
+      "runs": 10,
+      "times": [
+       0.162713576,
+       0.143925313,
+       0.165088712,
+       0.14642590600000002,
+       0.141817142,
+       0.159515822,
+       0.187362106,
+       0.14830932300000002,
+       0.16994087800000002,
+       0.150756739
+      ],
+      "hyperfinePeakRssMedianKB": 88128
+     },
+     "peakRss": {
+      "medianKB": 88212,
+      "minKB": 87672,
+      "maxKB": 88992,
+      "samplesKB": [
+       87672,
+       87736,
+       87944,
+       88012,
+       88124,
+       88212,
+       88232,
+       88616,
+       88732,
+       88992
+      ]
+     }
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/synthetic/large/styles.css --content corpus/synthetic/large/content/f00000.html ... (507 args)",
+     "outputSha256": "74f5df777c0b9f3b4fd97e11fa69943b669195c04b2f43bfdc94e55bcd6291d5",
+     "size": {
+      "raw": 363602,
+      "minified": 311480,
+      "gzip": 41517,
+      "brotli": 37626
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss",
+      "mean": 1.1528539508,
+      "stddev": 0.08658094323373487,
+      "median": 1.1224208125,
+      "min": 1.052081722,
+      "max": 1.320004715,
+      "user": 1.5784043000000003,
+      "system": 0.19583750000000003,
+      "runs": 10,
+      "times": [
+       1.320004715,
+       1.220112435,
+       1.107184574,
+       1.115582661,
+       1.082534285,
+       1.165538032,
+       1.255427242,
+       1.080814878,
+       1.129258964,
+       1.052081722
+      ],
+      "hyperfinePeakRssMedianKB": 188978
+     },
+     "peakRss": {
+      "medianKB": 190292,
+      "minKB": 185504,
+      "maxKB": 192220,
+      "samplesKB": [
+       185504,
+       187780,
+       189448,
+       189744,
+       189944,
+       190292,
+       190316,
+       191068,
+       191360,
+       192220
+      ]
+     },
+     "inProcessApi": {
+      "mean": 0.7710959986,
+      "stddev": 0.048125238445089626,
+      "median": 0.7558920114999998,
+      "min": 0.7161449869999996,
+      "max": 0.8327383670000001,
+      "samples": 10,
+      "times": [
+       0.7161449869999996,
+       0.721885784,
+       0.7283864080000003,
+       0.7342125820000001,
+       0.7497630829999998,
+       0.7620209399999999,
+       0.8141052880000007,
+       0.8216511580000005,
+       0.8300513890000002,
+       0.8327383670000001
+      ],
+      "outputBytes": 363602
+     }
+    }
+   },
+   "correctness": {
+    "inputSelectors": 45659,
+    "kept": {
+     "prunecss": 7452,
+     "purgecss": 7260
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 7260,
+      "keptOnlyByPrunecss": {
+       "count": 192,
+       "byCategory": {
+        "attribute": {
+         "count": 192,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ".u1035[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1087[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1113[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1122[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1133[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1147[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1171[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1203[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 0,
+       "byCategory": {}
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 38207,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 38399,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     }
+    },
+    "staticallyUnmatchedKept": {}
+   }
+  },
+  {
+   "name": "synthetic-huge",
+   "description": "Synthetic: 200,000 rules x 2,000 HTML files (fixed seed)",
+   "input": {
+    "cssBytes": 8800318,
+    "cssSha256": "eaa099f627a34da89b04efcb76881dea58c139c8c46647202078691291be7066",
+    "contentFiles": 2000,
+    "contentBytes": 17850787,
+    "size": {
+     "raw": 8800318,
+     "minified": 7648949,
+     "gzip": 1261247,
+     "brotli": 1091783
+    }
+   },
+   "tools": {
+    "prunecss": {
+     "label": "prunecss",
+     "command": "../target/release/prunecss prune corpus/synthetic/huge/styles.css --content corpus/synthetic/huge/content/f00000.html corpus/synthetic/huge/content/f00001.html ... (2006 args)",
+     "outputSha256": "b0d7d70b29f209a45551762191a41ebfa6df93b1af8de00d1893a1c4fd34ad21",
+     "size": {
+      "raw": 1947306,
+      "minified": 1319666,
+      "gzip": 183247,
+      "brotli": 160575
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "prunecss",
+      "mean": 0.6311228540000001,
+      "stddev": 0.033560987016916614,
+      "median": 0.6275970405,
+      "min": 0.58818351,
+      "max": 0.681179132,
+      "user": 0.7275482,
+      "system": 0.19248119999999996,
+      "runs": 10,
+      "times": [
+       0.6186262840000001,
+       0.639386224,
+       0.628668953,
+       0.680715144,
+       0.681179132,
+       0.655880888,
+       0.596698673,
+       0.626525128,
+       0.595364604,
+       0.58818351
+      ],
+      "hyperfinePeakRssMedianKB": 333344
+     },
+     "peakRss": {
+      "medianKB": 332828,
+      "minKB": 330928,
+      "maxKB": 335996,
+      "samplesKB": [
+       330928,
+       332076,
+       332208,
+       332212,
+       332268,
+       332828,
+       332932,
+       333416,
+       335368,
+       335996
+      ]
+     }
+    },
+    "purgecss": {
+     "label": "purgecss",
+     "command": "node node_modules/purgecss/bin/purgecss.js --css corpus/synthetic/huge/styles.css --content corpus/synthetic/huge/content/f00000.html ... (2007 args)",
+     "outputSha256": "7a25c756041f52fa6285d4f17ec65e4ae6ac564ee4ec5e3c418f94c9400c072d",
+     "size": {
+      "raw": 1491595,
+      "minified": 1279258,
+      "gzip": 178207,
+      "brotli": 156389
+     },
+     "minifierWarnings": 0,
+     "cli": {
+      "command": "purgecss",
+      "mean": 4.4209004359,
+      "stddev": 0.2387081356890801,
+      "median": 4.274750559,
+      "min": 4.199281642,
+      "max": 4.807291877,
+      "user": 5.589377900000001,
+      "system": 0.5745851,
+      "runs": 10,
+      "times": [
+       4.2661625,
+       4.199281642,
+       4.263517,
+       4.283338618,
+       4.470489079,
+       4.670844536,
+       4.807291877,
+       4.764139902,
+       4.243892922,
+       4.240046283
+      ],
+      "hyperfinePeakRssMedianKB": 499964
+     },
+     "peakRss": {
+      "medianKB": 501860,
+      "minKB": 492584,
+      "maxKB": 503556,
+      "samplesKB": [
+       492584,
+       498832,
+       499652,
+       500668,
+       500932,
+       501860,
+       502632,
+       502924,
+       503300,
+       503556
+      ]
+     },
+     "inProcessApi": {
+      "mean": 3.5846046419999995,
+      "stddev": 0.18220115725457908,
+      "median": 3.5600465890000006,
+      "min": 3.3390807980000026,
+      "max": 3.988286773,
+      "samples": 10,
+      "times": [
+       3.3390807980000026,
+       3.4345999259999953,
+       3.4762386929999995,
+       3.4868880719999997,
+       3.5018480310000015,
+       3.6182451469999997,
+       3.6269470949999993,
+       3.6644147389999997,
+       3.709497146,
+       3.988286773
+      ],
+      "outputBytes": 1491595
+     }
+    }
+   },
+   "correctness": {
+    "inputSelectors": 182406,
+    "kept": {
+     "prunecss": 29935,
+     "purgecss": 29151
+    },
+    "comparisons": {
+     "prunecss-vs-purgecss": {
+      "keptByBoth": 29151,
+      "keptOnlyByPrunecss": {
+       "count": 784,
+       "byCategory": {
+        "attribute": {
+         "count": 784,
+         "matchStaticDom": 0,
+         "examples": [
+          {
+           "selector": ".u10056[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u10064[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u10136[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u10212[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u10394[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u1040[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u10415[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          },
+          {
+           "selector": ".u10422[data-state=open]",
+           "matchesStaticDom": false,
+           "notScannedByPrunecss": [],
+           "notExtractedByPurgecss": []
+          }
+         ]
+        }
+       }
+      },
+      "other": "purgecss",
+      "keptOnlyByOther": {
+       "count": 0,
+       "byCategory": {}
+      }
+     }
+    },
+    "falseRemovals": {
+     "prunecss": {
+      "removed": 152471,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     },
+     "purgecss": {
+      "removed": 153255,
+      "matchingStaticDom": 0,
+      "exact": 0,
+      "rewrittenNotRemoved": 0,
+      "byCategory": {},
+      "examples": []
+     }
+    },
+    "staticallyUnmatchedKept": {}
+   }
+  }
+ ]
+}
