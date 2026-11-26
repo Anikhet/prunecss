@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 1281175ba8a06cc2f69b042c2ac62e852ffb0267e2a3a416dee621c513f21674 # shrinks to words = ["a"]
 cc 800a22d0d0446603f91ac0fc49080359f3b1750dedc32a230ca9e056c3174f9d # shrinks to source = ""
+cc 85aacce3bb7ff2d1fba71d5b5701f500c02f187a60835213ed46cbd58fc638aa # shrinks to source = "['"

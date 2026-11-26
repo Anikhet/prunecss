@@ -6,6 +6,7 @@
 //! candidate only keeps CSS if a selector names it. Returning too few would
 //! delete CSS the page uses, so every rule here errs on the side of more.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 /// Returns every candidate class or id name in `source`.
@@ -19,7 +20,8 @@ use std::collections::BTreeSet;
 /// Names built at runtime, such as `` `btn-${size}` ``, cannot be found by
 /// any static scanner; safelist them instead.
 ///
-/// Names are borrowed from `source`, so no strings are copied.
+/// Names are borrowed from `source`; only names that exist after decoding
+/// HTML entities (`&amp;`, `&quot;`, …) are copied.
 ///
 /// ```
 /// use prunecss_core::extract_classes;
@@ -29,18 +31,108 @@ use std::collections::BTreeSet;
 /// assert!(found.contains("active"));
 /// ```
 #[must_use]
-pub fn extract_classes(source: &str) -> BTreeSet<&str> {
+pub fn extract_classes(source: &str) -> BTreeSet<Cow<'_, str>> {
     let mut names = BTreeSet::new();
+    collect(source, &mut |name| {
+        names.insert(Cow::Borrowed(name));
+    });
+    // Server-rendered HTML escapes attribute text (`[&amp;_p]:mt-2`,
+    // `class=&quot;badge&quot;`). Scan a decoded copy as well; the few names
+    // that only exist after decoding are the only ones that get copied.
+    if let Some(decoded) = decode_entities(source) {
+        collect(&decoded, &mut |name| {
+            if !names.contains(name) {
+                names.insert(Cow::Owned(name.to_owned()));
+            }
+        });
+    }
+    names
+}
+
+/// Emits every candidate in `text`.
+fn collect<'t>(text: &'t str, emit: &mut impl FnMut(&'t str)) {
     // Two readings of the same text, because brackets are ambiguous: in
     // `grid-cols-[repeat(2,1fr)]` they hold part of one Tailwind name, while
     // in `clsx(['a', { b: on }])` they are JavaScript punctuation. Taking the
     // union of both readings finds the names either way.
     for brackets in [Brackets::KeepWhole, Brackets::Split] {
-        for token in Tokens::new(source, brackets) {
-            add_candidates(token, &mut names);
+        for token in Tokens::new(text, brackets) {
+            add_candidates(token, emit);
+            if let Some(unescaped) = after_js_escape(text, token) {
+                add_candidates(unescaped, emit);
+            }
         }
     }
-    names
+}
+
+/// `"card\nbtn"` in a script is the two names `card` and `btn`, but the
+/// backslash splits it into `card` and `nbtn`. For a token right after a
+/// backslash, also try it without the escape's letters.
+fn after_js_escape<'t>(text: &'t str, token: &'t str) -> Option<&'t str> {
+    // `token` is a slice of `text`, so this is its byte offset.
+    let start = (token.as_ptr() as usize).checked_sub(text.as_ptr() as usize)?;
+    if start == 0 || text.as_bytes()[start - 1] != b'\\' {
+        return None;
+    }
+    let bytes = token.as_bytes();
+    let skip = match bytes.first()? {
+        b'n' | b'r' | b't' | b'f' | b'v' | b'b' | b'0' => 1,
+        b'u' if bytes.len() > 5 && bytes[1..5].iter().all(u8::is_ascii_hexdigit) => 5,
+        b'x' if bytes.len() > 3 && bytes[1..3].iter().all(u8::is_ascii_hexdigit) => 3,
+        _ => return None,
+    };
+    // Every skipped byte is ASCII, so this is a char boundary.
+    Some(&token[skip..]).filter(|rest| !rest.is_empty())
+}
+
+/// Decodes the HTML entities that appear in escaped markup. Returns `None`
+/// when there is nothing to decode, so most files are scanned only once.
+fn decode_entities(text: &str) -> Option<String> {
+    if !text.contains('&') {
+        return None;
+    }
+    let mut decoded = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut changed = false;
+    while let Some(amp) = rest.find('&') {
+        decoded.push_str(&rest[..amp]);
+        let after = &rest[amp + 1..];
+        if let Some((ch, consumed)) = decode_one(after) {
+            decoded.push(ch);
+            rest = &after[consumed..];
+            changed = true;
+        } else {
+            decoded.push('&');
+            rest = after;
+        }
+    }
+    decoded.push_str(rest);
+    changed.then_some(decoded)
+}
+
+/// Decodes one entity at the start of `text` (just after `&`), returning the
+/// character and how many bytes the entity used, including the `;`.
+fn decode_one(text: &str) -> Option<(char, usize)> {
+    // Entity names and numbers are short and ASCII; `;` is a char boundary.
+    let end = text.bytes().take(12).position(|byte| byte == b';')?;
+    let body = &text[..end];
+    let ch = match body {
+        "amp" => '&',
+        "quot" => '"',
+        "apos" => '\'',
+        "lt" => '<',
+        "gt" => '>',
+        "nbsp" => ' ',
+        _ => {
+            let number = body.strip_prefix('#')?;
+            let code = match number.strip_prefix(['x', 'X']) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                None => number.parse().ok()?,
+            };
+            char::from_u32(code)?
+        }
+    };
+    Some((ch, end + 1))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +145,13 @@ enum Brackets {
 
 /// Bytes that end a name everywhere: no class name in markup contains them.
 fn is_hard_delimiter(byte: u8) -> bool {
-    byte.is_ascii_whitespace() || matches!(byte, b'"' | b'\'' | b'`' | b'\\')
+    byte.is_ascii_whitespace() || matches!(byte, b'`' | b'\\')
+}
+
+/// Quotes end a name, except inside `[…]` when brackets are kept whole:
+/// `bg-[url('/a.png')]`, `before:content-['']`, `font-['Inter']`.
+fn is_quote(byte: u8) -> bool {
+    matches!(byte, b'"' | b'\'')
 }
 
 /// Bytes that end a name, except inside `[…]` when brackets are kept whole
@@ -97,24 +195,30 @@ impl<'a> Iterator for Tokens<'a> {
 
         while self.pos < bytes.len() {
             let byte = bytes[self.pos];
-            let ends_token = if is_hard_delimiter(byte) {
-                // A name never spans whitespace or quotes, so an unbalanced
-                // `[` cannot swallow the rest of the file.
-                depth = 0;
-                true
-            } else {
-                match self.brackets {
-                    Brackets::Split => is_soft_delimiter(byte) || matches!(byte, b'[' | b']'),
-                    Brackets::KeepWhole => {
-                        match byte {
-                            b'[' => depth += 1,
-                            b']' => depth = depth.saturating_sub(1),
-                            _ => {}
+            let quote_inside_brackets =
+                is_quote(byte) && self.brackets == Brackets::KeepWhole && depth > 0;
+            let ends_token =
+                if is_hard_delimiter(byte) || (is_quote(byte) && !quote_inside_brackets) {
+                    // A name never spans whitespace, so an unbalanced `[` cannot
+                    // swallow the rest of the file.
+                    depth = 0;
+                    true
+                } else {
+                    match self.brackets {
+                        // `+` and `~` also split here: `querySelector(".a+.b")`.
+                        Brackets::Split => {
+                            is_soft_delimiter(byte) || matches!(byte, b'[' | b']' | b'+' | b'~')
                         }
-                        depth == 0 && is_soft_delimiter(byte)
+                        Brackets::KeepWhole => {
+                            match byte {
+                                b'[' => depth += 1,
+                                b']' => depth = depth.saturating_sub(1),
+                                _ => {}
+                            }
+                            depth == 0 && is_soft_delimiter(byte)
+                        }
                     }
-                }
-            };
+                };
 
             self.pos += 1;
             if ends_token {
@@ -129,23 +233,25 @@ impl<'a> Iterator for Tokens<'a> {
     }
 }
 
-/// Adds `token` and the shorter names hidden inside it.
+/// Emits `token` and the shorter names hidden inside it.
 ///
 /// `.modal` (a selector string) also yields `modal`, `active:` (an object
 /// key) yields `active`, `class:active` (Svelte) and `styles.button` (CSS
 /// modules) yield `active` and `button`. Extra candidates cost nothing.
-fn add_candidates<'a>(token: &'a str, names: &mut BTreeSet<&'a str>) {
+fn add_candidates<'t>(token: &'t str, emit: &mut impl FnMut(&'t str)) {
     const EDGE_PUNCTUATION: [char; 7] = ['.', '#', ':', '!', '?', '&', '|'];
 
-    names.insert(token);
+    emit(token);
     let trimmed = token
         .trim_start_matches(EDGE_PUNCTUATION)
         .trim_end_matches(EDGE_PUNCTUATION);
     if trimmed.is_empty() {
         return;
     }
-    names.insert(trimmed);
-    names.extend(trimmed.split([':', '.']).filter(|part| !part.is_empty()));
+    emit(trimmed);
+    for part in trimmed.split([':', '.']).filter(|part| !part.is_empty()) {
+        emit(part);
+    }
 }
 
 #[cfg(test)]
@@ -232,6 +338,28 @@ mod tests {
         assert_finds(source, expected);
     }
 
+    // Found in the pre-release review: each of these deleted used CSS.
+    #[rstest]
+    #[case::quoted_url_value(r#"<div class="bg-[url('/a.png')]">"#, &["bg-[url('/a.png')]"])]
+    #[case::empty_content_value(r#"<p class="before:content-['']">"#, &["before:content-['']"])]
+    #[case::quoted_font(r#"<p class="font-['Inter']">"#, &["font-['Inter']"])]
+    #[case::double_quotes_in_single(r#"<p class='content-["x"]'>"#, &[r#"content-["x"]"#])]
+    #[case::arbitrary_property(r#"<p class="[content:'']">"#, &["[content:'']"])]
+    #[case::entity_quotes(r#"<div data-title="<span class=&quot;badge&quot;>">"#, &["badge"])]
+    #[case::entity_ampersand(r#"<p class="[&amp;_p]:mt-2">"#, &["[&_p]:mt-2"])]
+    #[case::entity_apostrophe(r#"<p class="before:content-[&#x27;&#x27;]">"#, &["before:content-['']"])]
+    #[case::entity_space(r#"<p class="a&#32;b">"#, &["a", "b"])]
+    #[case::query_adjacent(r#"querySelector(".a+.b")"#, &["a", "b"])]
+    #[case::query_sibling(r#"querySelector(".c~.d")"#, &["c", "d"])]
+    #[case::js_newline_escape(r#"const html = "card\nbtn";"#, &["card", "btn"])]
+    #[case::js_unicode_escape(r#"const html = "card\u0020btn";"#, &["btn"])]
+    fn extract_classes_should_find_names_the_review_found_missing(
+        #[case] source: &str,
+        #[case] expected: &[&str],
+    ) {
+        assert_finds(source, expected);
+    }
+
     #[rstest]
     #[case::empty("")]
     #[case::only_delimiters(" \"'`<>={}();,\\$")]
@@ -243,7 +371,7 @@ mod tests {
     fn extract_classes_should_borrow_substrings_of_the_input() {
         let source = r#"<div class="a b" :class="{ c: on }">"#;
         let found = extract_classes(source);
-        assert!(found.iter().all(|name| source.contains(name)));
+        assert!(found.iter().all(|name| source.contains(name.as_ref())));
     }
 
     // Rule 10 from the research: no quadratic blow-up on long minified lines
@@ -268,7 +396,8 @@ mod tests {
                 for name in extract_classes(&source) {
                     prop_assert!(!name.is_empty());
                     prop_assert!(!name.bytes().any(|b| b.is_ascii_whitespace()));
-                    prop_assert!(!name.contains(['"', '\'', '`']));
+                    // Quotes may appear inside `[…]` (`bg-[url('x')]`), backticks never.
+                    prop_assert!(!name.contains('`'));
                 }
             }
 

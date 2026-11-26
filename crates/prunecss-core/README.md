@@ -4,13 +4,12 @@ The engine behind [`prunecss`](https://github.com/Anikhet/prunecss): find the
 class names a project uses, then remove the CSS rules that can never match.
 
 ```rust
-use std::collections::BTreeSet;
 use prunecss_core::{extract_classes, prune, PruneOptions};
 
 let html = r#"<button class="btn btn-primary">Save</button>"#;
 let css = ".btn { padding: 1rem } .btn-primary { color: white } .card { border: 1px solid }";
 
-let used: BTreeSet<&str> = extract_classes(html);
+let used = extract_classes(html);
 let output = prune(css, &used, &PruneOptions::default().minify(true))?;
 
 assert_eq!(output.css, ".btn{padding:1rem}.btn-primary{color:#fff}");

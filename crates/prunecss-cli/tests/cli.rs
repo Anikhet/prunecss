@@ -179,7 +179,7 @@ fn prune_should_report_invalid_safelist_regexes() {
     let output = prune_fixture_site(&["--safelist", "/(/"]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success());
-    assert!(stderr.contains("invalid pattern `(`"), "stderr: {stderr}");
+    assert!(stderr.contains("invalid pattern `/(/`"), "stderr: {stderr}");
 }
 
 #[test]

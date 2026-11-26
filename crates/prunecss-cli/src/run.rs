@@ -1,5 +1,6 @@
 //! What each command does, once arguments and config are resolved.
 
+use std::borrow::Cow;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -184,11 +185,11 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
 pub(crate) fn scan(content: &Patterns, css: Option<&Path>, gitignore: bool) -> Result<()> {
     let files = content_files(content, gitignore)?;
     let sources = read_all(&files)?;
-    let mut names: Vec<&str> = used_names(&sources).into_iter().collect();
+    let mut names: Vec<Cow<'_, str>> = used_names(&sources).into_iter().collect();
     if let Some(css) = css {
         let defined =
             defined_names(&read(css)?).with_context(|| format!("reading {}", display(css)))?;
-        names.retain(|name| defined.contains(*name));
+        names.retain(|name| defined.contains(name.as_ref()));
     }
     // Hash-set order is random; print sorted so output is reproducible.
     names.sort_unstable();
@@ -382,7 +383,7 @@ fn read_input(input: &Input) -> Result<String> {
 }
 
 /// Collects candidate names across files in parallel, borrowing from them.
-fn used_names(sources: &[String]) -> FxHashSet<&str> {
+fn used_names(sources: &[String]) -> FxHashSet<Cow<'_, str>> {
     sources
         .par_iter()
         .fold(FxHashSet::default, |mut names, source| {

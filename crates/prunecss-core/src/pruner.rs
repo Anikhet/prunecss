@@ -7,6 +7,7 @@
 //! removal. That keeps more CSS than strictly needed, but never deletes CSS a
 //! page uses.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashSet};
 use std::hash::BuildHasher;
@@ -37,6 +38,19 @@ impl UsedNames for BTreeSet<&str> {
 }
 
 impl<S: BuildHasher> UsedNames for HashSet<&str, S> {
+    fn contains_name(&self, name: &str) -> bool {
+        self.contains(name)
+    }
+}
+
+/// The set [`extract_classes`](crate::extract_classes) returns.
+impl UsedNames for BTreeSet<Cow<'_, str>> {
+    fn contains_name(&self, name: &str) -> bool {
+        self.contains(name)
+    }
+}
+
+impl<S: BuildHasher> UsedNames for HashSet<Cow<'_, str>, S> {
     fn contains_name(&self, name: &str) -> bool {
         self.contains(name)
     }
@@ -1222,6 +1236,46 @@ mod tests {
         let options = safelist_options(Safelist::default().greedy(exact("x")));
         let css = ":is(.x,.y) .unused{color:red}";
         assert_eq!(prune_with(css, &[], &options).css, css);
+    }
+
+    // Found in the pre-release review: readers outside style rules.
+    #[rstest]
+    #[case::container_style_query(
+        ":root{--theme:dark}@container style(--theme: dark){.x{color:red}}"
+    )]
+    #[case::page_rule(":root{--m:1cm}@page{margin:var(--m)}")]
+    #[case::position_try(":root{--w:10px}@position-try --p{width:var(--w)}")]
+    #[case::unknown_at_rule(":root{--gap:1rem}@custom-thing{gap:var(--gap)}")]
+    fn variables_should_count_readers_outside_style_rules(#[case] css: &str) {
+        let options = PruneOptions::default().variables(true);
+        assert_eq!(prune_with(css, &["x"], &options).removed_variables, 0);
+    }
+
+    #[rstest]
+    #[case::quoted_name_with_space(
+        r#"@keyframes "my anim"{to{opacity:0}}.x{animation-name:"my anim"}"#
+    )]
+    #[case::escaped_digit(r"@keyframes \31spin{to{opacity:0}}.x{animation-name:\31spin}")]
+    fn keyframes_should_match_escaped_and_quoted_names(#[case] css: &str) {
+        let options = PruneOptions::default().keyframes(true);
+        assert_eq!(prune_with(css, &["x"], &options).removed_keyframes, 0);
+    }
+
+    #[rstest]
+    #[case::page_rule("@font-face{font-family:Inter;src:url(i.woff2)}@page{font-family:Inter}")]
+    #[case::font_feature_values(
+        "@font-face{font-family:Icons;src:url(i.woff2)}@font-feature-values Icons{@swash{fancy:1}}"
+    )]
+    fn font_face_should_count_references_outside_style_rules(#[case] css: &str) {
+        let options = PruneOptions::default().font_face(true);
+        assert_eq!(prune_with(css, &[], &options).removed_font_faces, 0);
+    }
+
+    #[test]
+    fn font_face_should_match_content_case_insensitively() {
+        let options = PruneOptions::default().font_face(true);
+        let css = "@font-face{font-family:MyFont;src:url(m.woff2)}";
+        assert_eq!(prune_with(css, &["myfont"], &options).removed_font_faces, 0);
     }
 
     #[test]

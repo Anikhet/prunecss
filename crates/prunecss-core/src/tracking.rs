@@ -10,6 +10,7 @@
 //! When in doubt, everything is kept: if any value cannot be printed for
 //! inspection, nothing is removed.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use lightningcss::declaration::DeclarationBlock;
@@ -22,6 +23,7 @@ use lightningcss::rules::style::StyleRule;
 use lightningcss::rules::{CssRule, CssRuleList};
 use lightningcss::stylesheet::PrinterOptions;
 use lightningcss::traits::ToCss;
+use lightningcss::values::ident::Ident;
 
 use crate::pruner::UsedNames;
 use crate::rules;
@@ -44,7 +46,7 @@ pub(crate) struct Removed {
     pub(crate) variables: usize,
 }
 
-pub(crate) fn remove_unused<R>(
+pub(crate) fn remove_unused<R: ToCss>(
     rules: &mut CssRuleList<'_, R>,
     used: &impl UsedNames,
     safelist: &Safelist,
@@ -68,7 +70,14 @@ pub(crate) fn remove_unused<R>(
         retain_rules(rules, &mut |rule| match rule {
             CssRule::Keyframes(keyframes) if enabled.keyframes => {
                 let name = keyframes_name(&keyframes.name);
+                // References are printed, so look for the name both as it is
+                // and as printed: `"my anim"` is referenced as `my\ anim`,
+                // `\31spin` as `\31 spin`. A plain substring match keeps
+                // too much at worst.
+                let printed = Ident(name.into()).to_css_string(PrinterOptions::default());
                 let keep = tokens.contains(name)
+                    || text.contains(name)
+                    || printed.is_ok_and(|printed| text.contains(&printed))
                     || used.contains_name(name)
                     || any_matches(&safelist.keyframes, name);
                 removed.keyframes += usize::from(!keep);
@@ -114,9 +123,11 @@ fn font_face_is_referenced(
     };
     std::iter::once(first).chain(families).any(|family| {
         lowered_text.contains(&family.to_lowercase())
-            || family
-                .split_ascii_whitespace()
-                .all(|word| used.contains_name(word))
+            || family.split_ascii_whitespace().all(|word| {
+                // CSS family names are case-insensitive, so content may
+                // write `myfont` for `MyFont`.
+                used.contains_name(word) || used.contains_name(&word.to_lowercase())
+            })
     })
 }
 
@@ -172,7 +183,7 @@ fn defined_variable<'a>(property: &'a Property<'_>) -> Option<&'a str> {
 
 /// All declaration values of kept rules, one per line. `None` if any value
 /// cannot be printed, in which case callers must not remove anything.
-fn reference_text<R>(rules: &CssRuleList<'_, R>) -> Option<String> {
+fn reference_text<R: ToCss>(rules: &CssRuleList<'_, R>) -> Option<String> {
     let mut text = String::new();
     let mut complete = true;
     for_each_block(rules, &mut |block| {
@@ -186,14 +197,62 @@ fn reference_text<R>(rules: &CssRuleList<'_, R>) -> Option<String> {
             }
         }
     });
-    complete.then_some(text)
+    (complete && other_reference_text(rules, &mut text)).then_some(text)
+}
+
+/// Appends the text of everything outside ordinary declaration blocks that
+/// can still refer to a variable, keyframe or font: `@page`,
+/// `@position-try`, `@font-feature-values`, unknown at-rules and the like
+/// (printed whole), and `@container` conditions such as
+/// `style(--theme: dark)`. Listing what to skip, rather than what to read,
+/// means a rule type nobody thought of keeps CSS instead of deleting it.
+/// Returns `false` if anything can't be printed.
+fn other_reference_text<R: ToCss>(rules: &CssRuleList<'_, R>, text: &mut String) -> bool {
+    rules.0.iter().all(|rule| match rule {
+        CssRule::Container(container) => {
+            let condition = container
+                .condition
+                .as_ref()
+                .map_or(Ok(String::new()), |condition| {
+                    condition.to_css_string(PrinterOptions::default())
+                });
+            condition.is_ok_and(|condition| {
+                text.push_str(&condition);
+                text.push('\n');
+                true
+            }) && other_reference_text(&container.rules, text)
+        }
+        CssRule::Style(style) => other_reference_text(&style.rules, text),
+        CssRule::Nesting(nesting) => other_reference_text(&nesting.style.rules, text),
+        CssRule::LayerBlock(layer) => other_reference_text(&layer.rules, text),
+        // Declarations are read by `for_each_block`; a font face does not
+        // refer to itself; these hold no references.
+        CssRule::Keyframes(_)
+        | CssRule::FontFace(_)
+        | CssRule::NestedDeclarations(_)
+        | CssRule::Import(_)
+        | CssRule::Namespace(_)
+        | CssRule::LayerStatement(_)
+        | CssRule::Ignored => true,
+        other => match rules::group_rules(other) {
+            Some(group) => other_reference_text(group, text),
+            None => other
+                .to_css_string(PrinterOptions::default())
+                .is_ok_and(|printed| {
+                    text.push_str(&printed);
+                    text.push('\n');
+                    true
+                }),
+        },
+    })
 }
 
 /// `--name` tokens in `text`, such as the `--brand` in `var(--brand, red)`.
-fn variable_references(text: &str) -> impl Iterator<Item = &str> {
+fn variable_references(text: &str) -> impl Iterator<Item = String> {
     extract_classes(text)
         .into_iter()
         .filter(|token| token.starts_with("--") && token.len() > 2)
+        .map(Cow::into_owned)
 }
 
 /// Works out which custom properties something still reads.
@@ -201,7 +260,7 @@ fn variable_references(text: &str) -> impl Iterator<Item = &str> {
 /// Readers are ordinary declarations, the content files and the safelist.
 /// A variable read only by another variable is live only if that one is,
 /// so chains are followed until nothing new is reached.
-fn live_variables<R>(
+fn live_variables<R: ToCss>(
     rules: &CssRuleList<'_, R>,
     used: &impl UsedNames,
     safelist: &Safelist,
@@ -224,13 +283,11 @@ fn live_variables<R>(
             }
         }
     });
-    if !complete {
+    if !complete || !other_reference_text(rules, &mut reader_text) {
         return None;
     }
 
-    let mut live: BTreeSet<String> = variable_references(&reader_text)
-        .map(str::to_owned)
-        .collect();
+    let mut live: BTreeSet<String> = variable_references(&reader_text).collect();
     live.extend(
         definitions
             .iter()
@@ -246,8 +303,8 @@ fn live_variables<R>(
     while let Some(name) = pending.pop() {
         for (_, value) in definitions.iter().filter(|(defined, _)| *defined == name) {
             for reference in variable_references(value) {
-                if live.insert(reference.to_owned()) {
-                    pending.push(reference.to_owned());
+                if live.insert(reference.clone()) {
+                    pending.push(reference);
                 }
             }
         }

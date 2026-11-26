@@ -47,7 +47,8 @@ impl Pattern {
     }
 
     /// Parses the string form used in config files and on the command line:
-    /// `/source/` is a regular expression, anything else an exact name.
+    /// `/source/` (optionally followed by flags `i`, `m`, `s`, `x`, `U`, as
+    /// in `/^btn-/i`) is a regular expression, anything else an exact name.
     /// This is the same convention PurgeCSS uses for patterns in JSON.
     ///
     /// ```
@@ -61,15 +62,42 @@ impl Pattern {
     /// # Errors
     ///
     /// Returns [`PatternError`] if a `/…/` pattern is not a valid regular
-    /// expression.
+    /// expression, is empty (`//` would match every name) or has an unknown
+    /// flag. A pattern that looks like a regex is never quietly treated as an
+    /// exact name.
     pub fn parse(text: &str) -> Result<Self, PatternError> {
-        match text
-            .strip_prefix('/')
-            .and_then(|rest| rest.strip_suffix('/'))
-        {
-            Some(source) if text.len() > 1 => Self::regex(source),
-            _ => Ok(Self::exact(text)),
+        let Some((source, flags)) = text.strip_prefix('/').and_then(|rest| {
+            rest.rfind('/')
+                .map(|close| (&rest[..close], &rest[close + 1..]))
+        }) else {
+            return Ok(Self::exact(text));
+        };
+        let error = |message: &str| PatternError {
+            source: text.to_owned(),
+            message: message.to_owned(),
+        };
+        if source.is_empty() {
+            return Err(error("an empty regular expression would match every name"));
         }
+        let mut builder = regex::RegexBuilder::new(source);
+        for flag in flags.chars() {
+            match flag {
+                'i' => builder.case_insensitive(true),
+                'm' => builder.multi_line(true),
+                's' => builder.dot_matches_new_line(true),
+                'x' => builder.ignore_whitespace(true),
+                'U' => builder.swap_greed(true),
+                _ => {
+                    return Err(error(&format!(
+                        "unknown flag `{flag}`; use i, m, s, x or U"
+                    )));
+                }
+            };
+        }
+        builder
+            .build()
+            .map(Self::Regex)
+            .map_err(|err| error(&err.to_string()))
     }
 
     /// Returns `true` if `name` matches this pattern.
@@ -209,6 +237,29 @@ mod tests {
             Pattern::parse(text).map(|p| p.matches(name)).ok(),
             Some(expected)
         );
+    }
+
+    #[rstest]
+    #[case::case_insensitive_flag("/^btn-/i", "BTN-x", true)]
+    #[case::flag_still_anchors("/^btn-/i", "x-btn", false)]
+    #[case::inline_case_flag("/(?i)^btn-/", "Btn-x", true)]
+    #[case::unicode_class(r"/^\p{L}+$/", "größe", true)]
+    fn parse_should_support_regex_flags_and_unicode(
+        #[case] text: &str,
+        #[case] name: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            Pattern::parse(text).map(|p| p.matches(name)).ok(),
+            Some(expected)
+        );
+    }
+
+    #[rstest]
+    #[case::empty_regex("//")]
+    #[case::unknown_flag("/^a/q")]
+    fn parse_should_reject_patterns_that_look_like_broken_regexes(#[case] text: &str) {
+        assert!(Pattern::parse(text).is_err());
     }
 
     #[test]

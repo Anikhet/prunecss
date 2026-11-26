@@ -12,6 +12,8 @@ use std::collections::BTreeSet;
 use lightningcss::rules::{CssRule, CssRuleList};
 use lightningcss::selector::{Component, Selector};
 use lightningcss::stylesheet::{ParserOptions, StyleSheet};
+use std::borrow::Cow;
+
 use prunecss_core::{PruneOptions, extract_classes, prune};
 
 /// Separates the stylesheet from the content in a raw fuzz input.
@@ -41,9 +43,9 @@ pub fn split_input(data: &[u8]) -> (String, String) {
 /// The extra words let the fuzzer mark names as used without first having
 /// to discover `class="…"` syntax, which reaches the keep paths much sooner.
 #[must_use]
-pub fn used_names(content: &str) -> BTreeSet<&str> {
+pub fn used_names(content: &str) -> BTreeSet<Cow<'_, str>> {
     let mut used = extract_classes(content);
-    used.extend(content.split_ascii_whitespace());
+    used.extend(content.split_ascii_whitespace().map(Cow::Borrowed));
     used
 }
 
@@ -52,7 +54,7 @@ fn minified() -> PruneOptions {
 }
 
 /// Invariant 1: `prune` never panics, whatever the input. Errors are fine.
-pub fn check_no_panic(css: &str, used: &BTreeSet<&str>) {
+pub fn check_no_panic(css: &str, used: &BTreeSet<Cow<'_, str>>) {
     for minify in [false, true] {
         let _ = prune(css, used, &PruneOptions::default().minify(minify));
     }
@@ -62,7 +64,7 @@ pub fn check_no_panic(css: &str, used: &BTreeSet<&str>) {
 ///
 /// Pruning the minified output again with the same used names must give
 /// byte-identical output and remove nothing.
-pub fn check_idempotent(css: &str, used: &BTreeSet<&str>) {
+pub fn check_idempotent(css: &str, used: &BTreeSet<Cow<'_, str>>) {
     if has_known_issue(css) {
         return;
     }
@@ -98,7 +100,7 @@ pub fn check_idempotent(css: &str, used: &BTreeSet<&str>) {
 /// - pruning the pretty output with `minify` gives the same CSS as
 ///   minifying directly, so the two printers agree.
 #[cfg(feature = "pretty")]
-fn check_pretty_printer(css: &str, used: &BTreeSet<&str>, minified_once: &str) {
+fn check_pretty_printer(css: &str, used: &BTreeSet<Cow<'_, str>>, minified_once: &str) {
     let pretty_options = PruneOptions::default();
     let Ok(pretty) = prune(css, used, &pretty_options) else {
         panic!("prune succeeded minified but failed pretty-printed\ninput: {css:?}");
@@ -137,7 +139,7 @@ fn check_pretty_printer(css: &str, used: &BTreeSet<&str>, minified_once: &str) {
 /// those names marked used must keep everything: if a selector survived the
 /// first pass, a used set that is a superset of everything it requires can
 /// never remove it.
-pub fn check_removal_is_stable(css: &str, used: &BTreeSet<&str>) {
+pub fn check_removal_is_stable(css: &str, used: &BTreeSet<Cow<'_, str>>) {
     if has_known_issue(css) {
         return;
     }
@@ -145,7 +147,7 @@ pub fn check_removal_is_stable(css: &str, used: &BTreeSet<&str>) {
         return;
     };
     let names = names_in(&once.css);
-    let all: BTreeSet<&str> = names.iter().map(String::as_str).collect();
+    let all: BTreeSet<Cow<'_, str>> = names.iter().map(|name| Cow::Borrowed(name.as_str())).collect();
     let again = prune(&once.css, &all, &minified()).unwrap_or_else(|err| {
         panic!(
             "pruned output no longer parses: {err}\noutput: {:?}",
