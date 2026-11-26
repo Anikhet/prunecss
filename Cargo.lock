@@ -911,6 +911,7 @@ dependencies = [
  "proptest",
  "regex",
  "rstest",
+ "rustc-hash",
 ]
 
 [[package]]

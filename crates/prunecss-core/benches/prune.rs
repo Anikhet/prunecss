@@ -180,7 +180,8 @@ fn bench_real_bootstrap(c: &mut Criterion) {
         eprintln_skip();
         return;
     };
-    let used: BTreeSet<&str> = pages.iter().flat_map(|p| extract_classes(p)).collect();
+    let used: BTreeSet<std::borrow::Cow<'_, str>> =
+        pages.iter().flat_map(|p| extract_classes(p)).collect();
     let options = PruneOptions::default();
 
     let mut group = c.benchmark_group("prune");

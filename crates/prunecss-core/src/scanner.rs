@@ -9,6 +9,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+use rustc_hash::FxHashSet;
+
 /// Returns every candidate class or id name in `source`.
 ///
 /// This finds names in plain markup (`class="card"`), JSX (`className`),
@@ -32,21 +34,31 @@ use std::collections::BTreeSet;
 /// ```
 #[must_use]
 pub fn extract_classes(source: &str) -> BTreeSet<Cow<'_, str>> {
-    let mut names = BTreeSet::new();
+    // Most tokens are repeats (`class`, `div`, the same class names), so
+    // de-duplicate in a fast hash set and sort only the unique names once.
+    let mut names: FxHashSet<&str> = FxHashSet::default();
     collect(source, &mut |name| {
-        names.insert(Cow::Borrowed(name));
+        names.insert(name);
     });
+    let mut sorted: BTreeSet<Cow<'_, str>> =
+        names.iter().map(|name| Cow::Borrowed(*name)).collect();
     // Server-rendered HTML escapes attribute text (`[&amp;_p]:mt-2`,
     // `class=&quot;badge&quot;`). Scan a decoded copy as well; the few names
     // that only exist after decoding are the only ones that get copied.
     if let Some(decoded) = decode_entities(source) {
+        let mut decoded_names: FxHashSet<&str> = FxHashSet::default();
         collect(&decoded, &mut |name| {
             if !names.contains(name) {
-                names.insert(Cow::Owned(name.to_owned()));
+                decoded_names.insert(name);
             }
         });
+        sorted.extend(
+            decoded_names
+                .iter()
+                .map(|name| Cow::Owned((*name).to_owned())),
+        );
     }
-    names
+    sorted
 }
 
 /// Emits every candidate in `text`.
@@ -55,7 +67,13 @@ fn collect<'t>(text: &'t str, emit: &mut impl FnMut(&'t str)) {
     // `grid-cols-[repeat(2,1fr)]` they hold part of one Tailwind name, while
     // in `clsx(['a', { b: on }])` they are JavaScript punctuation. Taking the
     // union of both readings finds the names either way.
-    for brackets in [Brackets::KeepWhole, Brackets::Split] {
+    // Without brackets, `+` or `~` the two readings give the same tokens.
+    let readings: &[Brackets] = if text.contains(['[', ']', '+', '~']) {
+        &[Brackets::KeepWhole, Brackets::Split]
+    } else {
+        &[Brackets::KeepWhole]
+    };
+    for &brackets in readings {
         for token in Tokens::new(text, brackets) {
             add_candidates(token, emit);
             if let Some(unescaped) = after_js_escape(text, token) {
@@ -248,9 +266,13 @@ fn add_candidates<'t>(token: &'t str, emit: &mut impl FnMut(&'t str)) {
     if trimmed.is_empty() {
         return;
     }
-    emit(trimmed);
-    for part in trimmed.split([':', '.']).filter(|part| !part.is_empty()) {
-        emit(part);
+    if trimmed.len() != token.len() {
+        emit(trimmed);
+    }
+    if trimmed.contains([':', '.']) {
+        for part in trimmed.split([':', '.']).filter(|part| !part.is_empty()) {
+            emit(part);
+        }
     }
 }
 
