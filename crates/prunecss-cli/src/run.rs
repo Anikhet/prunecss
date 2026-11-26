@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use prunecss_core::{PruneOptions, PruneOutput, defined_names, extract_classes};
+use prunecss_core::{ParseWarning, PruneOptions, PruneOutput, defined_names, extract_classes};
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 use serde::Serialize;
@@ -56,14 +56,26 @@ struct FileReport {
     removed_variables: usize,
     bytes_before: usize,
     bytes_after: usize,
+    /// Rules the parser could not read and dropped.
+    warnings: Vec<WarningReport>,
+}
+
+#[derive(Debug, Serialize)]
+struct WarningReport {
+    message: String,
+    line: Option<u32>,
+    column: Option<u32>,
 }
 
 impl FileReport {
+    /// Whether the output differs from the input in content: something was
+    /// removed, or an unreadable rule was dropped.
     fn removed_anything(&self) -> bool {
         self.removed_selectors
             + self.removed_keyframes
             + self.removed_font_faces
             + self.removed_variables
+            + self.warnings.len()
             > 0
     }
 }
@@ -147,6 +159,7 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
                 input.label()
             );
         }
+        print_warnings(&input.label(), &pruned.warnings);
         if !settings.check {
             write_output(destination.as_deref(), &pruned.css)?;
         }
@@ -159,6 +172,15 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
             removed_variables: pruned.removed_variables,
             bytes_before: css.len(),
             bytes_after: pruned.css.len(),
+            warnings: pruned
+                .warnings
+                .iter()
+                .map(|warning| WarningReport {
+                    message: warning.message.clone(),
+                    line: warning.location.map(|location| location.line),
+                    column: warning.location.map(|location| location.column),
+                })
+                .collect(),
         });
     }
 
@@ -411,17 +433,36 @@ fn write_output(destination: Option<&Path>, css: &str) -> Result<()> {
     std::fs::write(destination, css).with_context(|| format!("writing {}", display(destination)))
 }
 
+/// Shows each rule the parser dropped, so nothing disappears silently.
+fn print_warnings(label: &str, warnings: &[ParseWarning]) {
+    const SHOWN: usize = 10;
+    for warning in warnings.iter().take(SHOWN) {
+        let position = warning
+            .location
+            .map(|location| format!("{}:{}:", location.line, location.column))
+            .unwrap_or_default();
+        eprintln!(
+            "warning: {label}:{position} dropped a rule or declaration that could not be parsed: {}",
+            warning.message
+        );
+    }
+    if warnings.len() > SHOWN {
+        eprintln!("warning: {label}: … and {} more", warnings.len() - SHOWN);
+    }
+}
+
 fn print_summary(report: &Report, check: bool) {
     let verb = if check { "would remove" } else { "removed" };
     for file in &report.files {
         let saved = file.bytes_before.saturating_sub(file.bytes_after);
         eprintln!(
-            "{}: {verb} {} selectors, {} @keyframes, {} @font-face, {} variables; {} -> {} bytes ({saved} saved)",
+            "{}: {verb} {} selectors, {} @keyframes, {} @font-face, {} variables, {} unreadable; {} -> {} bytes ({saved} saved)",
             file.path,
             file.removed_selectors,
             file.removed_keyframes,
             file.removed_font_faces,
             file.removed_variables,
+            file.warnings.len(),
             file.bytes_before,
             file.bytes_after,
         );

@@ -11,12 +11,14 @@ use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashSet};
 use std::hash::BuildHasher;
+use std::sync::{Arc, RwLock};
 
+use lightningcss::error::ParserError;
 use lightningcss::rules::style::StyleRule;
 use lightningcss::rules::{CssRule, CssRuleList};
 use lightningcss::selector::{Component, PseudoClass, Selector};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
-use lightningcss::targets::{Features, Targets};
+use lightningcss::targets::{Browsers, Features, Targets};
 use lightningcss::vendor_prefix::VendorPrefix;
 
 use crate::safelist::{Pattern, Safelist, any_matches};
@@ -144,12 +146,27 @@ pub struct PruneOutput {
     /// `removed_selectors` is not usually means the content was not the
     /// right content.
     pub kept_named_selectors: usize,
+    /// Rules and declarations that could not be parsed and were dropped,
+    /// in input order.
+    pub warnings: Vec<ParseWarning>,
     /// How many `@keyframes` rules were removed.
     pub removed_keyframes: usize,
     /// How many `@font-face` rules were removed.
     pub removed_font_faces: usize,
     /// How many custom property declarations were removed.
     pub removed_variables: usize,
+}
+
+/// A rule or declaration the parser could not read. Like a browser,
+/// prunecss skips it, so it is missing from the output; callers should tell
+/// the user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ParseWarning {
+    /// What could not be read.
+    pub message: String,
+    /// Where it starts in the input, if known.
+    pub location: Option<SourceLocation>,
 }
 
 /// What went wrong in [`prune`]. See [`PruneError::kind`].
@@ -260,14 +277,8 @@ pub fn prune(
     used: &impl UsedNames,
     options: &PruneOptions,
 ) -> Result<PruneOutput, PruneError> {
-    let parser_options = ParserOptions {
-        // Skip a broken rule with a warning instead of failing the whole
-        // file; real-world stylesheets often contain a few.
-        error_recovery: true,
-        ..ParserOptions::default()
-    };
-    let mut sheet = StyleSheet::parse(css, parser_options)
-        .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Parse, &err))?;
+    let warnings = Arc::new(RwLock::new(Vec::new()));
+    let mut sheet = parse_sheet(css, Some(Arc::clone(&warnings)))?;
 
     let matcher = Matcher {
         used,
@@ -298,26 +309,139 @@ pub fn prune(
     let printer_options = PrinterOptions {
         minify: options.minify,
         targets: Targets {
-            // Lightning CSS normalises `(min-width: 768px)` to the newer
-            // `(width >= 768px)` range syntax, which older browsers ignore.
-            // Always print the widely supported form instead.
+            // Without targets the printer writes the newest, shortest
+            // syntax (`#00000080` for `rgba(0,0,0,.5)`, `(width >= 768px)`
+            // for `(min-width: 768px)`), which older browsers ignore. Old
+            // targets make it keep widely supported forms.
+            browsers: Some(conservative_browsers()),
             include: Features::MediaQueries,
-            ..Targets::default()
+            // ...but never flatten CSS nesting: that is a structural
+            // rewrite, not printing, and the user wrote nesting on purpose.
+            exclude: Features::Nesting,
         },
         ..PrinterOptions::default()
     };
     let printed = sheet
         .to_css(printer_options)
         .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Print, &err))?;
+    let warnings = warnings
+        .read()
+        .map(|warnings| {
+            warnings
+                .iter()
+                .map(ParseWarning::from_lightningcss)
+                .collect()
+        })
+        .unwrap_or_default();
 
     Ok(PruneOutput {
-        css: printed.code,
+        css: with_charset(printed.code, css, options.minify),
+        warnings,
         removed_selectors,
         kept_named_selectors: matcher.kept_named.get(),
         removed_keyframes: tracked.keyframes,
         removed_font_faces: tracked.font_faces,
         removed_variables: tracked.variables,
     })
+}
+
+/// Deeper nesting than this is refused. Real stylesheets nest a handful of
+/// levels; thousands overflow the stack in the parser and abort the process.
+const MAX_NESTING: usize = 100;
+
+type WarningSink<'i> = Arc<RwLock<Vec<lightningcss::error::Error<ParserError<'i>>>>>;
+
+fn parse_sheet<'i>(
+    css: &'i str,
+    warnings: Option<WarningSink<'i>>,
+) -> Result<StyleSheet<'i>, PruneError> {
+    if nesting_depth(css) > MAX_NESTING {
+        return Err(PruneError {
+            kind: PruneErrorKind::Parse,
+            message: format!("the stylesheet is nested more than {MAX_NESTING} levels deep"),
+            location: None,
+        });
+    }
+    let parser_options = ParserOptions {
+        // Skip a broken rule instead of failing the whole file, as browsers
+        // do; real-world stylesheets often contain a few. Each one is
+        // reported through `warnings`.
+        error_recovery: true,
+        warnings,
+        ..ParserOptions::default()
+    };
+    StyleSheet::parse(css, parser_options)
+        .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Parse, &err))
+}
+
+/// The deepest nesting of `{`, `(` and `[` outside strings and comments.
+fn nesting_depth(css: &str) -> usize {
+    let bytes = css.as_bytes();
+    let (mut depth, mut deepest, mut i) = (0_usize, 0_usize, 0);
+    while i < bytes.len() {
+        match bytes[i] {
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i = css[i + 2..]
+                    .find("*/")
+                    .map_or(bytes.len(), |end| i + 2 + end + 1);
+            }
+            quote @ (b'"' | b'\'') => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote && bytes[i] != b'\n' {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+            }
+            b'\\' => i += 1,
+            b'{' | b'(' | b'[' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+            }
+            b'}' | b')' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        i += 1;
+    }
+    deepest
+}
+
+/// Browser versions old enough that the printer keeps widely supported
+/// syntax: `rgba()` rather than 8-digit hex, `transparent` rather than
+/// `#0000`. Versions are `major << 16 | minor << 8`.
+fn conservative_browsers() -> Browsers {
+    Browsers {
+        ie: Some(11 << 16),
+        edge: Some(12 << 16),
+        safari: Some(9 << 16),
+        ios_saf: Some(9 << 16),
+        chrome: Some(49 << 16),
+        firefox: Some(45 << 16),
+        android: Some((4 << 16) | (4 << 8)),
+        ..Browsers::default()
+    }
+}
+
+/// Lightning CSS drops `@charset` and prints escapes such as `\201C` as the
+/// raw character, so declare UTF-8 whenever the output needs it; otherwise a
+/// page in another encoding would garble it.
+fn with_charset(code: String, input: &str, minify: bool) -> String {
+    let had_charset = input.trim_start_matches('\u{feff}').starts_with("@charset");
+    if code.is_ascii() && !had_charset {
+        return code;
+    }
+    let separator = if minify { "" } else { "\n" };
+    format!("@charset \"UTF-8\";{separator}{code}")
+}
+
+impl ParseWarning {
+    fn from_lightningcss(err: &lightningcss::error::Error<ParserError<'_>>) -> Self {
+        Self {
+            message: err.kind.to_string(),
+            location: err.loc.as_ref().map(|loc| SourceLocation {
+                line: loc.line.saturating_add(1),
+                column: loc.column,
+            }),
+        }
+    }
 }
 
 /// Returns every class and id name that selectors in `css` mention,
@@ -336,12 +460,7 @@ pub fn prune(
 /// Returns a [`PruneErrorKind::Parse`] error if the stylesheet cannot be
 /// parsed even with error recovery.
 pub fn defined_names(css: &str) -> Result<BTreeSet<String>, PruneError> {
-    let parser_options = ParserOptions {
-        error_recovery: true,
-        ..ParserOptions::default()
-    };
-    let sheet = StyleSheet::parse(css, parser_options)
-        .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Parse, &err))?;
+    let sheet = parse_sheet(css, None)?;
     let mut names = BTreeSet::new();
     collect_rule_names(&sheet.rules, &mut names);
     Ok(names)
@@ -516,11 +635,24 @@ fn keep_style_rule<R, U: UsedNames>(
         .any(|selector| mentions(selector, &safelist.deep));
 
     let before = style.selectors.0.len();
-    style.selectors.0.retain(|selector| {
-        mentions(selector, &safelist.greedy)
-            || mentions(selector, &safelist.deep)
-            || selector_can_match(selector, matcher)
-    });
+    let mut keep: Vec<bool> = style
+        .selectors
+        .0
+        .iter()
+        .map(|selector| {
+            mentions(selector, &safelist.greedy)
+                || mentions(selector, &safelist.deep)
+                || selector_can_match(selector, matcher)
+        })
+        .collect();
+    if !style.rules.0.is_empty() {
+        keep_nesting_specificity(&style.selectors.0, &mut keep);
+    }
+    let mut decisions = keep.into_iter();
+    style
+        .selectors
+        .0
+        .retain(|_| decisions.next().unwrap_or(true));
     *removed += before - style.selectors.0.len();
     let named = style
         .selectors
@@ -539,6 +671,31 @@ fn keep_style_rule<R, U: UsedNames>(
         prune_rules(&mut style.rules, matcher, removed);
     }
     true
+}
+
+/// In nested rules `&` matches like `:is(parent list)`, so its specificity
+/// is that of the most specific selector in the list. If pruning would drop
+/// that selector while keeping others, nested rules would silently lose to
+/// rules they used to beat. Keep the most specific one in that case.
+fn keep_nesting_specificity(selectors: &[Selector<'_>], keep: &mut [bool]) {
+    let kept_max = selectors
+        .iter()
+        .zip(keep.iter())
+        .filter(|(_, kept)| **kept)
+        .map(|(selector, _)| selector.specificity())
+        .max();
+    let Some(kept_max) = kept_max else {
+        // Nothing kept: the whole rule and its children go.
+        return;
+    };
+    let most_specific_removed = selectors
+        .iter()
+        .enumerate()
+        .filter(|(index, selector)| !keep[*index] && selector.specificity() > kept_max)
+        .max_by_key(|(_, selector)| selector.specificity());
+    if let Some((index, _)) = most_specific_removed {
+        keep[index] = true;
+    }
 }
 
 /// Whether the selector itself requires a class or id (not counting names
@@ -1318,6 +1475,99 @@ mod tests {
     #[case::standard_unchanged("input:placeholder-shown{color:red}")]
     fn prune_should_print_legacy_placeholder_selectors_as_written(#[case] css: &str) {
         assert_eq!(prune_min(css, &[]), css);
+    }
+
+    // Pre-release review: reprinting must not modernise values that older
+    // browsers can't read (8-digit hex breaks IE11, old Safari and Edge).
+    #[rstest]
+    #[case::rgba(".a{color:rgba(0,0,0,.5)}", ".a{color:rgba(0,0,0,.5)}")]
+    #[case::hsla(".a{color:hsla(0,0%,100%,.3)}", ".a{color:rgba(255,255,255,.3)}")]
+    #[case::transparent(".a{border-color:transparent}", ".a{border-color:transparent}")]
+    #[case::nesting_kept(".a{&:hover{color:red}}", ".a{&:hover{color:red}}")]
+    fn prune_should_print_values_older_browsers_understand(
+        #[case] css: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(prune_min(css, &["a"]), expected);
+    }
+
+    // Escapes such as `\201C` are printed as the raw character, so the
+    // output must declare its encoding or a non-UTF-8 page garbles it.
+    #[rstest]
+    #[case::non_ascii_output(r#".a:before{content:"\201C"}"#)]
+    #[case::input_charset(r#"@charset "utf-8";.a:before{content:"x"}"#)]
+    fn prune_should_declare_utf8_when_needed(#[case] css: &str) {
+        assert!(prune_min(css, &["a"]).starts_with(r#"@charset "UTF-8";"#));
+    }
+
+    #[test]
+    fn prune_should_not_add_a_charset_to_ascii_output() {
+        assert_eq!(prune_min(".a{color:red}", &["a"]), ".a{color:red}");
+    }
+
+    // Pre-release review: rules the parser rejects are dropped. That must
+    // be reported, never silent.
+    #[rstest]
+    #[case::shadow_piercing_combinator(".x >>> .y{color:red}")]
+    #[case::deep_combinator(".x /deep/ .y{color:red}")]
+    #[case::two_pseudo_elements(".x::before::after{color:red}")]
+    fn prune_should_warn_about_rules_it_could_not_parse(#[case] css: &str) {
+        let used = BTreeSet::from(["x", "y"]);
+        let output = prune(css, &used, &PruneOptions::default());
+        let warnings = output.map(|output| output.warnings).unwrap_or_default();
+        assert_eq!(
+            warnings.first().and_then(|w| w.location).map(|l| l.line),
+            Some(1),
+            "{warnings:?}"
+        );
+    }
+
+    #[test]
+    fn prune_should_not_warn_about_valid_css() {
+        let used = BTreeSet::from(["a"]);
+        let output = prune(".a{color:red}", &used, &PruneOptions::default());
+        assert_eq!(output.map(|output| output.warnings.len()).ok(), Some(0));
+    }
+
+    // Pre-release review: `&` in a nested rule matches like `:is(list)`, so
+    // its specificity is that of the parent list's most specific selector.
+    // Removing that one would make `& .c` lose to rules it used to beat.
+    #[test]
+    fn prune_should_keep_the_most_specific_parent_selector_of_nested_rules() {
+        let css = ".a,#gone{& .c{color:red}}";
+        assert_eq!(prune_min(css, &["a", "c"]), css);
+    }
+
+    #[test]
+    fn prune_should_remove_less_specific_parent_selectors_of_nested_rules() {
+        let css = "#a,.gone{& .c{color:red}}";
+        assert_eq!(prune_min(css, &["a", "c"]), "#a{& .c{color:red}}");
+    }
+
+    #[test]
+    fn prune_should_still_remove_parents_without_nested_rules() {
+        assert_eq!(prune_min(".a,#gone{color:red}", &["a"]), ".a{color:red}");
+    }
+
+    // Pre-release review: deep nesting overflowed the stack and aborted.
+    #[rstest]
+    #[case::functional_pseudo_classes(format!("{}.a{}{{color:red}}", ":is(".repeat(3000), ")".repeat(3000)))]
+    #[case::grouping_rules(format!("{}.a{{color:red}}{}", "@media print{".repeat(10_000), "}".repeat(10_000)))]
+    #[case::nested_rules(format!("{}color:red{}", ".a{".repeat(10_000), "}".repeat(10_000)))]
+    fn prune_should_refuse_absurdly_deep_nesting(#[case] css: String) {
+        let used = BTreeSet::from(["a"]);
+        let err = prune(&css, &used, &PruneOptions::default()).err();
+        assert!(err.is_some_and(|err| err.message().contains("nested more than")));
+    }
+
+    #[test]
+    fn prune_should_accept_ordinary_nesting_depth() {
+        let css = format!(
+            "{}.a{{color:red}}{}",
+            "@media print{".repeat(50),
+            "}".repeat(50)
+        );
+        assert!(prune_min(&css, &["a"]).contains(".a{color:red}"));
     }
 
     // Known Lightning CSS printer issues found by fuzzing (bug 8 in

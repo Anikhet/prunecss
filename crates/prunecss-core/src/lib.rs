@@ -17,7 +17,7 @@ mod scanner;
 mod tracking;
 
 pub use pruner::{
-    PruneError, PruneErrorKind, PruneOptions, PruneOutput, SourceLocation, UsedNames,
+    ParseWarning, PruneError, PruneErrorKind, PruneOptions, PruneOutput, SourceLocation, UsedNames,
     defined_names, prune,
 };
 pub use safelist::{Pattern, PatternError, Safelist};

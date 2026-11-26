@@ -2,4 +2,4 @@
 source: crates/prunecss-cli/tests/cli.rs
 expression: stdout(&output)
 ---
-.btn{padding:.5rem 1rem}.btn-lg{font-size:1.25rem}.is-active{outline:2px solid}.is-disabled{opacity:.5}.card{border:1px solid #ddd}.card-lg{padding:2rem}.shadow{box-shadow:0 1px 2px #0003}.text-danger{color:#dc143c}.big{font-size:2rem}.small{font-size:.8rem}.selected{background:gold}.open{display:block}.modal{position:fixed}.badge{border-radius:999px}.module-button{cursor:pointer}.md\:flex{display:flex}.w-1\/2{width:50%}.grid-cols-\[repeat\(auto-fill\,minmax\(0\,1fr\)\)\]{grid-template-columns:repeat(auto-fill,minmax(0,1fr))}
+.btn{padding:.5rem 1rem}.btn-lg{font-size:1.25rem}.is-active{outline:2px solid}.is-disabled{opacity:.5}.card{border:1px solid #ddd}.card-lg{padding:2rem}.shadow{box-shadow:0 1px 2px rgba(0,0,0,.2)}.text-danger{color:#dc143c}.big{font-size:2rem}.small{font-size:.8rem}.selected{background:gold}.open{display:block}.modal{position:fixed}.badge{border-radius:999px}.module-button{cursor:pointer}.md\:flex{display:flex}.w-1\/2{width:50%}.grid-cols-\[repeat\(auto-fill\,minmax\(0\,1fr\)\)\]{grid-template-columns:repeat(auto-fill,minmax(0,1fr))}

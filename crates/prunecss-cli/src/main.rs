@@ -138,6 +138,11 @@ struct ScanArgs {
 }
 
 fn main() -> ExitCode {
+    // Parsing recurses; bigger worker stacks give a wide margin below the
+    // core's nesting limit. If the pool is already set up, keep it.
+    let _ = rayon::ThreadPoolBuilder::new()
+        .stack_size(16 << 20)
+        .build_global();
     match run(Cli::parse()) {
         Ok(Outcome::Clean) => ExitCode::SUCCESS,
         Ok(Outcome::WouldRemove) => ExitCode::from(EXIT_WOULD_REMOVE),

@@ -126,9 +126,14 @@ Content files count as references for all three, so an animation, font or
 variable used from JavaScript is kept.
 
 ### Known limits
-- Output is reprinted by Lightning CSS, so some values change to an equivalent
-  form (`white` becomes `#fff`, `::before` becomes `:before`). Media queries
-  keep the widely supported `min-width` form.
+- Output is reprinted by Lightning CSS, so some values change to an
+  equivalent form (`white` becomes `#fff`, `::before` becomes `:before`).
+  Printing is tuned for old browsers: colours stay `rgba()` rather than
+  8-digit hex, media queries keep the `min-width` form, nesting is never
+  flattened, and `@charset "UTF-8"` is added when the output needs it.
+- Rules the parser can't read (`.a >>> .b`, `*zoom: 1` and similar hacks)
+  are skipped, as browsers skip them. prunecss prints a warning with the
+  file, line and column for each, and `--check` counts them as changes.
 - Fuzzing found that Lightning CSS's printer can merge tokens in unusual
   custom-property and unknown-property values that have no space between
   them: `--x:1+2px` prints as `--x:12px`, and `--y:a/**/b` as `--y:ab`.

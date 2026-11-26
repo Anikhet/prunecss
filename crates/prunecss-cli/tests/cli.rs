@@ -685,3 +685,47 @@ fn prune_should_accept_absolute_content_globs() {
     );
     assert_eq!(stdout(&output), ".used{color:red}");
 }
+
+// ---- Unreadable rules are reported, never dropped silently ---------------
+
+fn unreadable_project() -> tempfile::TempDir {
+    project(&[
+        ("i.html", r#"<p class="x y">"#),
+        ("s.css", ".x{color:red}\n.x >>> .y{color:red}\n"),
+    ])
+}
+
+#[test]
+fn prune_should_warn_about_rules_it_drops_as_unreadable() {
+    let dir = unreadable_project();
+    let output = run_in(dir.path(), &["prune", "s.css", "-c", "i.html"], None);
+    assert!(output.status.success());
+    assert!(
+        stderr(&output).contains("warning: s.css:2:"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn check_should_fail_when_unreadable_rules_would_be_dropped() {
+    let dir = unreadable_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "s.css", "-c", "i.html", "--check"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+}
+
+#[test]
+fn json_report_should_list_unreadable_rules() {
+    let dir = unreadable_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "s.css", "-c", "i.html", "--check", "--json"],
+        None,
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["files"][0]["warnings"][0]["line"], 2);
+}
