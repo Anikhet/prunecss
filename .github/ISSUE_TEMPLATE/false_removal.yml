@@ -1,0 +1,81 @@
+name: CSS was wrongly removed
+description: prunecss removed a rule or selector that your page actually uses (a "false removal").
+labels: ["bug", "false-removal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A false removal is the most serious kind of prunecss bug, so thank you for reporting it.
+
+        The most helpful report is a **minimal reproduction**: cut your files down until the problem only just still happens. A few lines of HTML/JS and a few lines of CSS is ideal. Small cases often become regression tests directly.
+
+        Before you report: class names built at runtime, such as `` `btn-${size}` `` or `clsx(...)` calls, are a [known limit](https://github.com/Anikhet/prunecss#known-limits) of any text scanner.
+  - type: input
+    id: version
+    attributes:
+      label: prunecss version
+      description: Output of `prunecss --version`, or the git commit if you built from source.
+      placeholder: prunecss 0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and config
+      description: The exact command you ran, and your config file if you use one.
+      render: shell
+      placeholder: prunecss prune styles.css --content index.html
+    validations:
+      required: true
+  - type: textarea
+    id: content
+    attributes:
+      label: Minimal content (HTML, JSX, template, ...)
+      description: The smallest content file that uses the class. Say what kind of file it is.
+      render: html
+      placeholder: |
+        <div class="md:flex"></div>
+    validations:
+      required: true
+  - type: textarea
+    id: css
+    attributes:
+      label: Minimal CSS
+      description: The smallest stylesheet that shows the problem.
+      render: css
+      placeholder: |
+        .md\:flex { display: flex }
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+      description: What prunecss should have kept.
+      render: css
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output
+      description: What prunecss printed.
+      render: css
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: How you noticed (for example, a broken page or a browser coverage report), or ideas about the cause. If you used an AI tool, say so here.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I reproduced this with the inputs above, not only with my full project.
+          required: true

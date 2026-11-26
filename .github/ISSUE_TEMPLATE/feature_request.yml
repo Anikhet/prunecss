@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an idea or a change for prunecss.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please check the [scope and non-goals](https://github.com/Anikhet/prunecss/blob/main/CONTRIBUTING.md#scope-and-non-goals) and the README roadmap first.
+
+        Please wait for a reply here before writing code. A new feature is something the project maintains for years, so the design needs agreeing first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Your proposal
+      description: How you would like it to work. Example commands, config or output help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: Other ways to solve it, and how other tools such as PurgeCSS handle it.
+    validations:
+      required: false
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on this?
+      options:
+        - "No"
+        - Yes, with some guidance
+        - Yes, I can do it on my own
+    validations:
+      required: false
