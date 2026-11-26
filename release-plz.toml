@@ -1,0 +1,84 @@
+# release-plz configuration: https://release-plz.dev/docs/config
+# The whole release process is described in docs/RELEASING.md.
+
+[workspace]
+# Publish only when a release PR is merged, never on an ordinary push to
+# `main`. This keeps every release a deliberate, reviewed decision.
+release_always = false
+# One changelog for the whole project, at the repository root.
+changelog_path = "./CHANGELOG.md"
+# Tags look like `prunecss-v0.2.0` and `prunecss-core-v0.2.0` (this is also
+# release-plz's default for a workspace with several published crates). The
+# package prefix keeps the two crates' tags apart, and the binary release
+# workflow listens for `prunecss-v*` only.
+git_tag_name = "{{ package }}-v{{ version }}"
+# Create a GitHub release per crate; the binaries are attached to the
+# `prunecss` one by .github/workflows/release-binaries.yml.
+git_release_enable = true
+# Run cargo-semver-checks on prunecss-core (library crates only) and flag
+# breaking API changes in the release PR.
+semver_check = true
+# Only bump workspace crates in Cargo.lock; Dependabot handles the rest.
+dependencies_update = false
+pr_labels = ["release"]
+
+# Both crates inherit `version.workspace = true`, so they always share one
+# version number. Making that explicit stops release-plz from ever trying to
+# give them different versions.
+[[package]]
+name = "prunecss-core"
+version_group = "prunecss"
+
+[[package]]
+name = "prunecss"
+version_group = "prunecss"
+
+[changelog]
+# Keep a Changelog (https://keepachangelog.com/en/1.1.0/). release-plz renders
+# this with its built-in git-cliff.
+header = """# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+"""
+# The crate name is part of each heading because both crates share one file.
+# The HTML comments in the group names only fix the section order (Keep a
+# Changelog order); `striptags` removes them from the output.
+body = """
+
+## `{{ package }}` - [{{ version }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+{%- if commit.scope -%}
+- *({{commit.scope}})* {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}{%- if commit.links %} ({% for link in commit.links %}[{{link.text}}]({{link.href}}) {% endfor -%}){% endif %}
+{% else -%}
+- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+"""
+trim = true
+# A breaking change is always listed, even if its commit type is skipped below.
+protect_breaking_commits = true
+sort_commits = "oldest"
+# Map Conventional Commits types onto the Keep a Changelog sections.
+commit_parsers = [
+    { message = "^feat", group = "<!-- 0 -->Added" },
+    { message = "^(perf|refactor)", group = "<!-- 1 -->Changed" },
+    { message = "^deprecate", group = "<!-- 2 -->Deprecated" },
+    { message = "^remove", group = "<!-- 3 -->Removed" },
+    { message = "^fix", group = "<!-- 4 -->Fixed" },
+    { message = "^security", group = "<!-- 5 -->Security" },
+    { body = ".*security", group = "<!-- 5 -->Security" },
+    # Housekeeping that users do not need to read about.
+    { message = "^(ci|test|style|chore|build)", skip = true },
+    { message = "^docs", skip = true },
+    # Anything else (including commits that do not follow Conventional
+    # Commits) is listed rather than silently dropped.
+    { message = "^.*", group = "<!-- 1 -->Changed" },
+]
