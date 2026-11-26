@@ -1,0 +1,18 @@
+[package]
+name = "prunecss"
+description = "Remove unused CSS, fast."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "prunecss"
+path = "src/main.rs"
+
+[dependencies]
+prunecss-core.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

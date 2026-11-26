@@ -1,0 +1,15 @@
+[package]
+name = "prunecss-core"
+description = "Core engine for prunecss: find which CSS classes a project uses and remove the rest."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+rstest.workspace = true
+
+[lints]
+workspace = true
