@@ -1,0 +1,103 @@
+name: Fuzz
+
+# Pull requests only check that the fuzz targets still compile; actually
+# fuzzing them runs once a day (and on demand), time-boxed per target.
+on:
+  pull_request:
+    paths:
+      - "crates/prunecss-core/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  schedule:
+    # Daily, at an off-peak minute.
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "How long to fuzz each target, in seconds"
+        type: number
+        default: 300
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_FUZZ_VERSION: "0.13.2"
+
+jobs:
+  build:
+    name: Build fuzz targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Install nightly Rust
+        # cargo-fuzz needs nightly for -Zsanitizer and coverage flags.
+        run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: fuzz
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version "$CARGO_FUZZ_VERSION"
+      - name: Check the fuzz lockfile is up to date
+        run: cargo +nightly fetch --locked --manifest-path fuzz/Cargo.toml
+      - name: Build every target
+        run: cargo +nightly fuzz build -s none
+      - name: Check the optional strict features compile
+        run: cargo +nightly check --locked --manifest-path fuzz/Cargo.toml --all-features
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - prune_no_panic
+          - prune_idempotent
+          - prune_output_reparses
+          - extract_classes_no_panic
+          - prune_structured
+    env:
+      TARGET: ${{ matrix.target }}
+      # Five minutes unless a manual run asks for something else.
+      FUZZ_SECONDS: ${{ inputs.seconds || 300 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Install nightly Rust
+        # cargo-fuzz needs nightly for -Zsanitizer and coverage flags.
+        run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: fuzz
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version "$CARGO_FUZZ_VERSION"
+      - name: Fuzz
+        # New inputs go to corpus-work/ so the committed seeds stay as they
+        # are. -timeout=1 reports any input slower than a second as a hang.
+        run: |
+          mkdir -p "fuzz/corpus-work/$TARGET" "fuzz/corpus/$TARGET"
+          cargo +nightly fuzz run "$TARGET" -s none \
+            "fuzz/corpus-work/$TARGET" "fuzz/corpus/$TARGET" -- \
+            -max_total_time="$FUZZ_SECONDS" -timeout=1 \
+            -dict=fuzz/dict/css.dict -print_final_stats=1
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+          retention-days: 30
