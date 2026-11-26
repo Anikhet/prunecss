@@ -195,6 +195,11 @@ pub fn has_known_issue(css: &str) -> bool {
         // `--x:1+2px` -> `--x:12px`, `x:a.0rem` -> `x:a0rem`,
         // `--y:a/**/b` -> `--y:ab`. Reported in regressions/README.md.
         || has_token_merge_risk(css)
+        // Bug 9: control characters (NUL, DEL, …) inside unknown at-rules
+        // and invalid declarations are printed raw, so the next parse reads
+        // something else: `a{@media{x:}@\0` -> `a{x:@\u{fffd};}` ->
+        // `a{x:@\u{fffd}}`. Real stylesheets don't contain them.
+        || css.chars().any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r' | '\u{c}'))
 }
 
 /// Whether `css` has a token boundary that Lightning CSS may print without

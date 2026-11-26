@@ -30,6 +30,7 @@ None of them panics.
 | 6 | `@media` with an empty first query gains a space on the next pass. | `@media , screen{…}` → `@media ,screen{…}` → `@media  ,screen{…}` | `same_output` (whitespace runs) | Low. |
 | 7 | **Out-of-range numbers** are clamped, and not to the same value each time. | `width:99999999999999999999999999999999999999999px` → `3.40282e38px` → `2147483647px`<br>`height:1e20px` → `2147483647px` | `has_known_issue` (≥10 digits or an exponent) | Low: absurd values. |
 | 8 | **Token lists are printed without separators**, so adjacent tokens merge, and `+` on a number is dropped. | `.a{x:..0rem}` → `.a{x:.0rem}` → `.a{x:0rem}`<br>`manual/`: `.a{x:a.0rem}` → `.a{x:a0rem}` (an ident!)<br>`manual/`: `.a{--y:a/**/b}` → `.a{--y:ab}`<br>`manual/`: `.a{--x:1+2px}` → `.a{--x:12px}` | `has_known_issue` (`has_token_merge_risk`) | **High**: silently changes values in custom properties and unparsed declarations in a single pass. |
+| 9 | **Control characters** (NUL, DEL, …) in unknown at-rules or invalid declarations are printed raw, so the output re-parses differently. Found on the full stack. | `prune_output_reparses/`: `a{@media{x:}@\0` → `a{x:@\u{fffd};}` → `a{x:@\u{fffd}}` | `has_known_issue` (any C0 control except tab, newline, CR, form feed) | Low: real stylesheets don't contain them. |
 
 Bug 8 is skipped by a deliberately narrow check (`has_token_merge_risk`:
 identifier then `.digit`, `..digit`, `digit+digit`, or a comment as the only

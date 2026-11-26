@@ -12,9 +12,10 @@ use std::hash::BuildHasher;
 
 use lightningcss::rules::style::StyleRule;
 use lightningcss::rules::{CssRule, CssRuleList};
-use lightningcss::selector::{Component, Selector};
+use lightningcss::selector::{Component, PseudoClass, Selector};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::targets::{Features, Targets};
+use lightningcss::vendor_prefix::VendorPrefix;
 
 use crate::safelist::{Pattern, Safelist, any_matches};
 use crate::{rules, tracking};
@@ -270,6 +271,8 @@ pub fn prune(
         },
     );
 
+    repair_legacy_pseudo_classes(&mut sheet.rules);
+
     // Printing only; `StyleSheet::minify` is deliberately not called because
     // it also merges rules and rewrites values, which is not our job.
     let printer_options = PrinterOptions {
@@ -369,6 +372,66 @@ fn collect_selector_names(selector: &Selector<'_>, names: &mut BTreeSet<String>)
                 collect_selector_names(inner, names);
             }
             _ => {}
+        }
+    }
+}
+
+/// Works around a Lightning CSS misreading: it parses the legacy
+/// pseudo-classes `:-moz-placeholder` (Firefox 4-18) and
+/// `:-ms-input-placeholder` (IE 10-11) as prefixed `:placeholder-shown` and
+/// would print `:-moz-placeholder-shown` / `:-ms-placeholder-shown`, which no
+/// browser supports. Those prefixed forms can only come from these two
+/// spellings, so they are turned back into exactly what was written.
+fn repair_legacy_pseudo_classes<R>(rules: &mut CssRuleList<'_, R>) {
+    for rule in &mut rules.0 {
+        if let Some(group) = rules::group_rules_mut(rule) {
+            repair_legacy_pseudo_classes(group);
+            continue;
+        }
+        let style = match rule {
+            CssRule::Style(style) => style,
+            CssRule::Nesting(nesting) => &mut nesting.style,
+            CssRule::LayerBlock(layer) => {
+                repair_legacy_pseudo_classes(&mut layer.rules);
+                continue;
+            }
+            _ => continue,
+        };
+        for selector in &mut style.selectors.0 {
+            repair_selector(selector);
+        }
+        repair_legacy_pseudo_classes(&mut style.rules);
+    }
+}
+
+fn repair_selector(selector: &mut Selector<'_>) {
+    for component in selector.iter_mut_raw_match_order() {
+        let legacy_name = match component {
+            Component::NonTSPseudoClass(PseudoClass::PlaceholderShown(prefix)) => {
+                if *prefix == VendorPrefix::Moz {
+                    Some("-moz-placeholder")
+                } else if *prefix == VendorPrefix::Ms {
+                    Some("-ms-input-placeholder")
+                } else {
+                    None
+                }
+            }
+            Component::Is(list)
+            | Component::Where(list)
+            | Component::Any(_, list)
+            | Component::Negation(list)
+            | Component::Has(list) => {
+                list.iter_mut().for_each(repair_selector);
+                None
+            }
+            Component::Slotted(inner) | Component::Host(Some(inner)) => {
+                repair_selector(inner);
+                None
+            }
+            _ => None,
+        };
+        if let Some(name) = legacy_name {
+            *component = Component::NonTSPseudoClass(PseudoClass::Custom { name: name.into() });
         }
     }
 }
@@ -1151,6 +1214,22 @@ mod tests {
         let names = defined_names(css).ok();
         let expected: BTreeSet<String> = expected.iter().map(|s| (*s).to_owned()).collect();
         assert_eq!(names, Some(expected));
+    }
+
+    // Lightning CSS reads the legacy pseudo-classes `:-moz-placeholder`
+    // (Firefox 4-18) and `:-ms-input-placeholder` (IE 10-11) as prefixed
+    // `:placeholder-shown` and would print `:-moz-placeholder-shown`, which
+    // no browser supports. Found by the benchmark correctness diff on Bulma.
+    #[rstest]
+    #[case::moz("input:-moz-placeholder{color:red}")]
+    #[case::ms("input:-ms-input-placeholder{color:red}")]
+    #[case::inside_is(":is(input:-moz-placeholder,textarea){color:red}")]
+    #[case::nested("input{color:red;&:-ms-input-placeholder{color:red}}")]
+    #[case::in_media("@media print{input:-moz-placeholder{color:red}}")]
+    #[case::pseudo_element_unchanged("input::-moz-placeholder{color:red}")]
+    #[case::standard_unchanged("input:placeholder-shown{color:red}")]
+    fn prune_should_print_legacy_placeholder_selectors_as_written(#[case] css: &str) {
+        assert_eq!(prune_min(css, &[]), css);
     }
 
     // Known Lightning CSS printer issues found by fuzzing (bug 8 in
