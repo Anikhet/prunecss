@@ -9,7 +9,6 @@ license = "MIT OR Apache-2.0"
 # Verified minimum: let chains (`if let … && let …`) need 1.88. CI checks it.
 rust-version = "1.88"
 repository = "https://github.com/Anikhet/prunecss"
-homepage = "https://github.com/Anikhet/prunecss"
 keywords = ["css", "purgecss", "unused-css", "tree-shaking", "minify"]
 categories = ["command-line-utilities", "web-programming", "development-tools"]
 

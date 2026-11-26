@@ -1153,6 +1153,36 @@ mod tests {
         assert_eq!(names, Some(expected));
     }
 
+    // Known Lightning CSS printer issues found by fuzzing (bug 8 in
+    // fuzz/regressions/README.md): token lists in unparsed values are
+    // printed without separators. These tests pin today's behaviour so a
+    // Lightning CSS upgrade that changes it is noticed; when one fails
+    // because the output is now correct, update the expectation and remove
+    // the matching skip in fuzz/src/lib.rs.
+    #[rstest]
+    #[case::signed_number_after_number(".a{--x:1+2px}", ".a{--x:12px}")]
+    #[case::comment_as_separator(".a{--y:a/**/b}", ".a{--y:ab}")]
+    #[case::ident_then_number(".a{x:a.0rem}", ".a{x:a0rem}")]
+    fn known_printer_issue_merges_adjacent_tokens(#[case] css: &str, #[case] printed: &str) {
+        assert_eq!(prune_min(css, &["a"]), printed);
+    }
+
+    // The same values written the way real stylesheets write them survive.
+    #[rstest]
+    #[case::spaced_numbers(".a{--x:1 +2px}")]
+    #[case::calc(".a{--x:calc(1px + 2px)}")]
+    #[case::spaced_comment(".a{--y:a /* note */ b}")]
+    fn ordinary_custom_property_values_are_preserved(#[case] css: &str) {
+        let printed = prune_min(css, &["a"]);
+        assert_eq!(
+            printed.split_ascii_whitespace().count(),
+            css.replace("/* note */ ", "")
+                .split_ascii_whitespace()
+                .count(),
+            "{printed}"
+        );
+    }
+
     mod properties {
         use super::*;
         use proptest::prelude::*;

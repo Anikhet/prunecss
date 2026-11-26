@@ -189,6 +189,38 @@ pub fn has_known_issue(css: &str) -> bool {
         // `99999999999999999999999999999999999999999px` prints as
         // `3.40282e38px`, which the next pass turns into `2147483647px`.
         || has_huge_number(css)
+        // Bug 8: in unparsed values (custom properties, unknown properties)
+        // Lightning CSS prints adjacent tokens without a separator and drops
+        // a leading `+`, so a single pass can change a value:
+        // `--x:1+2px` -> `--x:12px`, `x:a.0rem` -> `x:a0rem`,
+        // `--y:a/**/b` -> `--y:ab`. Reported in regressions/README.md.
+        || has_token_merge_risk(css)
+}
+
+/// Whether `css` has a token boundary that Lightning CSS may print without
+/// a separator (bug 8). Narrow on purpose: `w-1.5` (digit, dot, digit) and
+/// `.a.b` (letter, dot, letter) in selectors are still fuzzed.
+fn has_token_merge_risk(css: &str) -> bool {
+    let bytes = css.as_bytes();
+    let adjacent = bytes.windows(3).any(|w| match w {
+        // `a.0rem`: an identifier directly followed by a number.
+        [l, b'.', d] if l.is_ascii_alphabetic() && d.is_ascii_digit() => true,
+        // `..0rem`
+        [b'.', b'.', d] if d.is_ascii_digit() => true,
+        // `1+2px` / `1+.5px`: a number directly followed by a signed one.
+        [d, b'+', n] if d.is_ascii_digit() && (n.is_ascii_digit() || *n == b'.') => true,
+        _ => false,
+    });
+    // `a/**/b`: a comment used as the only separator between two tokens.
+    let comment_separator = css.match_indices("/*").any(|(start, _)| {
+        let before = bytes[..start].last().is_some_and(|c| !c.is_ascii_whitespace());
+        let after = css[start + 2..]
+            .find("*/")
+            .and_then(|end| bytes.get(start + 2 + end + 2))
+            .is_some_and(|c| !c.is_ascii_whitespace());
+        before && after
+    });
+    adjacent || comment_separator
 }
 
 /// Whether `css` has a number of ten or more digits, or one with an

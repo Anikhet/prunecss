@@ -129,6 +129,13 @@ variable used from JavaScript is kept.
 - Output is reprinted by Lightning CSS, so some values change to an equivalent
   form (`white` becomes `#fff`, `::before` becomes `:before`). Media queries
   keep the widely supported `min-width` form.
+- Fuzzing found that Lightning CSS's printer can merge tokens in unusual
+  custom-property and unknown-property values that have no space between
+  them: `--x:1+2px` prints as `--x:12px`, and `--y:a/**/b` as `--y:ab`.
+  Values written with normal spacing (`1 + 2px`, `calc(...)`) are not
+  affected. Details: [fuzz/regressions](fuzz/regressions/README.md). A
+  future version will keep the original bytes of every kept rule instead
+  of reprinting them.
 
 ## Contributing
 

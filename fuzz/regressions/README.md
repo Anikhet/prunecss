@@ -29,12 +29,17 @@ None of them panics.
 | 5 | `@container name{…}` (a name, no query) gains a space on the next pass. | `@container foo{p{x:y}}` → `@container foo {p{x:y}}` → `@container foo  {…}` | `same_output` (whitespace runs) | Low. |
 | 6 | `@media` with an empty first query gains a space on the next pass. | `@media , screen{…}` → `@media ,screen{…}` → `@media  ,screen{…}` | `same_output` (whitespace runs) | Low. |
 | 7 | **Out-of-range numbers** are clamped, and not to the same value each time. | `width:99999999999999999999999999999999999999999px` → `3.40282e38px` → `2147483647px`<br>`height:1e20px` → `2147483647px` | `has_known_issue` (≥10 digits or an exponent) | Low: absurd values. |
-| 8 | **Token lists are printed without separators**, so adjacent tokens merge, and `+` on a number is dropped. | `.a{x:..0rem}` → `.a{x:.0rem}` → `.a{x:0rem}`<br>`manual/`: `.a{x:a.0rem}` → `.a{x:a0rem}` (an ident!)<br>`manual/`: `.a{--y:a/**/b}` → `.a{--y:ab}`<br>`manual/`: `.a{--x:1+2px}` → `.a{--x:12px}` | **not skipped** | **High**: silently changes values in custom properties and unparsed declarations in a single pass. |
+| 8 | **Token lists are printed without separators**, so adjacent tokens merge, and `+` on a number is dropped. | `.a{x:..0rem}` → `.a{x:.0rem}` → `.a{x:0rem}`<br>`manual/`: `.a{x:a.0rem}` → `.a{x:a0rem}` (an ident!)<br>`manual/`: `.a{--y:a/**/b}` → `.a{--y:ab}`<br>`manual/`: `.a{--x:1+2px}` → `.a{--x:12px}` | `has_known_issue` (`has_token_merge_risk`) | **High**: silently changes values in custom properties and unparsed declarations in a single pass. |
 
-Bug 8 is not skipped because it is the most serious, and because no cheap
-input check can tell which inputs reach it. Until it is fixed,
-`prune_idempotent` and `prune_output_reparses` will keep finding it. Run them
-with `-fork=1 -ignore_crashes=1` to collect other crashes as well.
+Bug 8 is skipped by a deliberately narrow check (`has_token_merge_risk`:
+identifier then `.digit`, `..digit`, `digit+digit`, or a comment as the only
+separator between two tokens). Without the skip the daily fuzz job would fail
+every day on a known upstream bug and stop telling us about new ones. Run with
+`--features no-skips` to see it again, and remove the skip once Lightning CSS
+is fixed or prunecss stops reprinting declarations (planned: output that keeps
+the original bytes of every kept rule). The behaviour is also pinned by unit
+tests in `crates/prunecss-core/src/pruner.rs` (`known_printer_issue_*`), so a
+Lightning CSS upgrade that fixes it shows up as a test change.
 
 ## Where the bugs live
 
