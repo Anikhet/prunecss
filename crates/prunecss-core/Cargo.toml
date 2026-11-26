@@ -15,6 +15,7 @@ exclude = ["proptest-regressions/"]
 
 [dependencies]
 lightningcss.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

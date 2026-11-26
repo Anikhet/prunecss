@@ -139,3 +139,48 @@ fn prune_should_remove_only_unused_classes_from_framework_components() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("removed 2 selectors"), "stderr: {stderr}");
 }
+
+#[test]
+fn prune_should_keep_safelisted_classes() {
+    let output = prune_fixture_site(&["--safelist", "navbar-light", "--minify"]);
+    assert!(stdout(&output).contains(".navbar-light{"));
+}
+
+#[test]
+fn prune_should_accept_regex_safelist_patterns() {
+    let output = prune_fixture_site(&["--safelist", "/^btn-/", "--minify"]);
+    assert!(stdout(&output).contains(".btn-danger{"));
+}
+
+#[test]
+fn prune_should_keep_greedy_safelisted_selectors() {
+    let output = prune_fixture_site(&["--safelist-greedy", "card-footer", "--minify"]);
+    assert!(stdout(&output).contains(".card .card-footer{"));
+}
+
+#[test]
+fn prune_should_remove_unused_keyframes_when_asked() {
+    let output = prune_fixture_site(&["--keyframes", "--minify"]);
+    assert!(!stdout(&output).contains("@keyframes"));
+}
+
+#[test]
+fn prune_should_keep_keyframes_by_default() {
+    let output = prune_fixture_site(&["--minify"]);
+    assert!(stdout(&output).contains("@keyframes spin"));
+}
+
+#[test]
+fn prune_should_report_invalid_safelist_regexes() {
+    let output = prune_fixture_site(&["--safelist", "/(/"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(stderr.contains("invalid pattern `(`"), "stderr: {stderr}");
+}
+
+#[test]
+fn prune_should_report_tracked_removals_in_stats() {
+    let output = prune_fixture_site(&["--keyframes", "--stats"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("1 @keyframes"), "stderr: {stderr}");
+}

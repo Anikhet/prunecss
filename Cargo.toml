@@ -21,6 +21,9 @@ rstest = "0.29"
 proptest = "1"
 insta = "1"
 clap = { version = "4", features = ["derive"] }
+# Linear-time matching: safelist patterns come from user config and must not
+# allow catastrophic backtracking.
+regex = { version = "1.13", default-features = false, features = ["std", "unicode-perl"] }
 # Lightning CSS has never left 1.0.0-alpha; pin exactly so upgrades are deliberate.
 lightningcss = { version = "=1.0.0-alpha.72", default-features = false }
 

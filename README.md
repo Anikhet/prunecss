@@ -33,8 +33,8 @@ uses. To avoid breaking pages, prunecss **never** removes CSS because of:
 - tags, attributes, combinators (`>`, `+`, `~`) or pseudo-classes such as
   `:hover`, `:focus` and `::before`;
 - anything inside `:not()`, `:has()` or `:nth-child(… of …)`;
-- `@keyframes`, `@font-face`, `@property` or custom properties, which need
-  usage tracking that doesn't exist yet;
+- `@keyframes`, `@font-face` or custom properties, unless you opt in (see
+  below), and never `@property`;
 - named `@layer` blocks, even empty ones, because they fix the cascade order.
 
 It does:
@@ -58,10 +58,39 @@ Vue (`:class`), Svelte (`class:active`), Astro (`class:list`), Angular
 Over-collecting is deliberate. A candidate that isn't a real class keeps no
 CSS, but a missed one would delete CSS the page needs.
 
-### Known limits
+### Safelist
 
-- Class names assembled at runtime, such as `` `btn-${size}` ``, cannot be
-  found by any static scanner. A safelist for these is coming next.
+Class names assembled at runtime, such as `` `btn-${size}` ``, cannot be
+found by any static scanner. Safelist them, using an exact name or a
+`/regex/`:
+
+```bash
+prunecss prune styles.css --content src/App.jsx \
+  --safelist /^btn-/ \
+  --safelist-greedy /^swiper/ \
+  --safelist-deep prose
+```
+
+- `--safelist` treats a matching class or id as used.
+- `--safelist-greedy` keeps any selector that contains a match, such as
+  `.swiper-slide .unused`.
+- `--safelist-deep` also keeps every rule nested inside a matching selector.
+
+### Unused keyframes, fonts and variables (opt-in)
+
+Like PurgeCSS, these are kept unless you ask:
+
+- `--keyframes` removes `@keyframes` that no kept rule names, including
+  through `-webkit-animation`, the `animation` shorthand or a variable.
+- `--font-face` removes `@font-face` rules whose family no kept rule names,
+  including through the `font` shorthand.
+- `--variables` removes custom properties that nothing reads through
+  `var()`, following chains such as `--brand: var(--base)`.
+
+Content files count as references for all three, so an animation, font or
+variable used from JavaScript is kept.
+
+### Known limits
 - Output is reprinted by Lightning CSS, so some values change to an equivalent
   form (`white` becomes `#fff`, `::before` becomes `:before`). Media queries
   keep the widely supported `min-width` form.
@@ -72,8 +101,9 @@ CSS, but a missed one would delete CSS the page needs.
 - [x] Parse CSS with [Lightning CSS](https://lightningcss.dev) and match selectors
 - [x] Remove unused rules and selectors and write the result
 - [x] Detect class names in JS, Vue, Svelte, Astro and Angular templates
-- [ ] Safelist and PurgeCSS-compatible config
-- [ ] Track `@keyframes`, fonts and custom properties
+- [x] Safelist (standard, greedy, deep; exact or `/regex/`)
+- [x] Opt-in removal of unused `@keyframes`, `@font-face` and custom properties
+- [ ] PurgeCSS-compatible config file
 - [ ] Parallel scanning of whole projects (`ignore` + rayon)
 - [ ] Benchmarks against PurgeCSS
 - [ ] npm package, Vite and PostCSS plugins

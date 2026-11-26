@@ -16,6 +16,9 @@ use lightningcss::selector::{Component, Selector};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::targets::{Features, Targets};
 
+use crate::safelist::{Pattern, Safelist, any_matches};
+use crate::{rules, tracking};
+
 /// A set of class and id names known to be used by the content.
 ///
 /// Implemented for the standard sets so callers can pick whichever their
@@ -48,6 +51,10 @@ impl<S: BuildHasher> UsedNames for HashSet<&str, S> {
 /// ```
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent on/off switches, mirroring PurgeCSS's options"
+)]
 pub struct PruneOptions {
     /// Print without whitespace.
     ///
@@ -55,6 +62,20 @@ pub struct PruneOptions {
     /// does write some values in an equivalent shorter form either way, for
     /// example `blue` as `#00f` and `::before` as `:before`.
     pub minify: bool,
+    /// Names to keep whatever the content says.
+    pub safelist: Safelist,
+    /// Remove `@keyframes` that no kept rule and no content file mentions.
+    ///
+    /// Off by default, like PurgeCSS. Animations started from JavaScript by
+    /// name stay safe because content files are checked too.
+    pub keyframes: bool,
+    /// Remove `@font-face` rules whose family no kept rule and no content
+    /// file mentions. Off by default.
+    pub font_face: bool,
+    /// Remove custom property declarations (`--name: …`) that nothing reads
+    /// through `var()`, following chains of variables. Content files count
+    /// as readers, so variables read from JavaScript are kept. Off by default.
+    pub variables: bool,
 }
 
 impl PruneOptions {
@@ -62,6 +83,34 @@ impl PruneOptions {
     #[must_use]
     pub fn minify(mut self, minify: bool) -> Self {
         self.minify = minify;
+        self
+    }
+
+    /// Sets [`PruneOptions::safelist`].
+    #[must_use]
+    pub fn safelist(mut self, safelist: Safelist) -> Self {
+        self.safelist = safelist;
+        self
+    }
+
+    /// Sets [`PruneOptions::keyframes`].
+    #[must_use]
+    pub fn keyframes(mut self, enabled: bool) -> Self {
+        self.keyframes = enabled;
+        self
+    }
+
+    /// Sets [`PruneOptions::font_face`].
+    #[must_use]
+    pub fn font_face(mut self, enabled: bool) -> Self {
+        self.font_face = enabled;
+        self
+    }
+
+    /// Sets [`PruneOptions::variables`].
+    #[must_use]
+    pub fn variables(mut self, enabled: bool) -> Self {
+        self.variables = enabled;
         self
     }
 }
@@ -75,6 +124,12 @@ pub struct PruneOutput {
     /// How many selectors were removed, counting each selector in a list
     /// such as `.a, .b` separately.
     pub removed_selectors: usize,
+    /// How many `@keyframes` rules were removed.
+    pub removed_keyframes: usize,
+    /// How many `@font-face` rules were removed.
+    pub removed_font_faces: usize,
+    /// How many custom property declarations were removed.
+    pub removed_variables: usize,
 }
 
 /// What went wrong in [`prune`]. See [`PruneError::kind`].
@@ -194,8 +249,26 @@ pub fn prune(
     let mut sheet = StyleSheet::parse(css, parser_options)
         .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Parse, &err))?;
 
+    let matcher = Matcher {
+        used,
+        safelist: &options.safelist,
+    };
     let mut removed_selectors = 0;
-    prune_rules(&mut sheet.rules, used, &mut removed_selectors);
+    prune_rules(&mut sheet.rules, &matcher, &mut removed_selectors);
+
+    // Keyframes, fonts and variables are judged against what survived, so
+    // this runs after selector pruning: a keyframe used only by a removed
+    // rule is unused.
+    let tracked = tracking::remove_unused(
+        &mut sheet.rules,
+        used,
+        &options.safelist,
+        tracking::Enabled {
+            keyframes: options.keyframes,
+            font_face: options.font_face,
+            variables: options.variables,
+        },
+    );
 
     // Printing only; `StyleSheet::minify` is deliberately not called because
     // it also merges rules and rewrites values, which is not our job.
@@ -217,58 +290,74 @@ pub fn prune(
     Ok(PruneOutput {
         css: printed.code,
         removed_selectors,
+        removed_keyframes: tracked.keyframes,
+        removed_font_faces: tracked.font_faces,
+        removed_variables: tracked.variables,
     })
 }
 
-fn prune_rules<R>(rules: &mut CssRuleList<'_, R>, used: &impl UsedNames, removed: &mut usize) {
-    rules.0.retain_mut(|rule| keep_rule(rule, used, removed));
+/// Decides whether a class or id name keeps a selector alive.
+struct Matcher<'a, U> {
+    used: &'a U,
+    safelist: &'a Safelist,
+}
+
+impl<U: UsedNames> Matcher<'_, U> {
+    fn is_used(&self, name: &str) -> bool {
+        self.used.contains_name(name) || any_matches(&self.safelist.standard, name)
+    }
+}
+
+fn prune_rules<R, U: UsedNames>(
+    rules: &mut CssRuleList<'_, R>,
+    matcher: &Matcher<'_, U>,
+    removed: &mut usize,
+) {
+    rules.0.retain_mut(|rule| keep_rule(rule, matcher, removed));
 }
 
 /// Prunes inside `rule` and returns whether the rule itself should stay.
-fn keep_rule<R>(rule: &mut CssRule<'_, R>, used: &impl UsedNames, removed: &mut usize) -> bool {
+fn keep_rule<R, U: UsedNames>(
+    rule: &mut CssRule<'_, R>,
+    matcher: &Matcher<'_, U>,
+    removed: &mut usize,
+) -> bool {
+    if let Some(group) = rules::group_rules_mut(rule) {
+        return rules::keep_group(group, |group| prune_rules(group, matcher, removed));
+    }
     match rule {
-        CssRule::Style(style) => keep_style_rule(style, used, removed),
-        CssRule::Nesting(nesting) => keep_style_rule(&mut nesting.style, used, removed),
-        CssRule::Media(group) => keep_group(&mut group.rules, used, removed),
-        CssRule::Supports(group) => keep_group(&mut group.rules, used, removed),
-        CssRule::Container(group) => keep_group(&mut group.rules, used, removed),
-        CssRule::Scope(group) => keep_group(&mut group.rules, used, removed),
-        CssRule::StartingStyle(group) => keep_group(&mut group.rules, used, removed),
-        CssRule::MozDocument(group) => keep_group(&mut group.rules, used, removed),
+        CssRule::Style(style) => keep_style_rule(style, matcher, removed),
+        CssRule::Nesting(nesting) => keep_style_rule(&mut nesting.style, matcher, removed),
         CssRule::LayerBlock(layer) => {
-            prune_rules(&mut layer.rules, used, removed);
+            prune_rules(&mut layer.rules, matcher, removed);
             // A named layer fixes its position in the cascade order even
             // when empty, so removing it could change which styles win.
             layer.name.is_some() || !layer.rules.0.is_empty()
         }
-        // Keyframes, fonts, @property, @import and the rest have no selectors.
-        // They need usage tracking before they can be removed safely.
+        // Keyframes, fonts, @property, @import and the rest have no
+        // selectors; `tracking` handles the ones that can be removed.
         _ => true,
     }
 }
 
-/// Prunes a grouping rule such as `@media`, keeping it unless pruning
-/// emptied it.
-fn keep_group<R>(
-    rules: &mut CssRuleList<'_, R>,
-    used: &impl UsedNames,
-    removed: &mut usize,
-) -> bool {
-    let was_empty = rules.0.is_empty();
-    prune_rules(rules, used, removed);
-    was_empty || !rules.0.is_empty()
-}
-
-fn keep_style_rule<R>(
+fn keep_style_rule<R, U: UsedNames>(
     style: &mut StyleRule<'_, R>,
-    used: &impl UsedNames,
+    matcher: &Matcher<'_, U>,
     removed: &mut usize,
 ) -> bool {
-    let before = style.selectors.0.len();
-    style
+    let safelist = matcher.safelist;
+    let keeps_children = style
         .selectors
         .0
-        .retain(|selector| selector_can_match(selector, used));
+        .iter()
+        .any(|selector| mentions(selector, &safelist.deep));
+
+    let before = style.selectors.0.len();
+    style.selectors.0.retain(|selector| {
+        mentions(selector, &safelist.greedy)
+            || mentions(selector, &safelist.deep)
+            || selector_can_match(selector, matcher)
+    });
     *removed += before - style.selectors.0.len();
 
     if style.selectors.0.is_empty() {
@@ -276,25 +365,27 @@ fn keep_style_rule<R>(
         *removed += count_selectors(&style.rules);
         return false;
     }
-    prune_rules(&mut style.rules, used, removed);
+    if !keeps_children {
+        prune_rules(&mut style.rules, matcher, removed);
+    }
     true
 }
 
-fn selector_can_match(selector: &Selector<'_>, used: &impl UsedNames) -> bool {
+fn selector_can_match<U: UsedNames>(selector: &Selector<'_>, matcher: &Matcher<'_, U>) -> bool {
     selector
         .iter_raw_match_order()
-        .all(|component| component_can_match(component, used))
+        .all(|component| component_can_match(component, matcher))
 }
 
-fn component_can_match(component: &Component<'_>, used: &impl UsedNames) -> bool {
+fn component_can_match<U: UsedNames>(component: &Component<'_>, matcher: &Matcher<'_, U>) -> bool {
     match component {
         // Lightning CSS stores names unescaped, so `.md\:flex` arrives here
         // as `md:flex`, the same text the scanner finds in markup.
-        Component::Class(name) | Component::ID(name) => used.contains_name(&name.0),
+        Component::Class(name) | Component::ID(name) => matcher.is_used(&name.0),
         // One matching alternative is enough.
         Component::Is(list) | Component::Where(list) | Component::Any(_, list) => list
             .iter()
-            .any(|selector| selector_can_match(selector, used)),
+            .any(|selector| selector_can_match(selector, matcher)),
         // `:not()`, `:has()`, `:nth-child(… of …)`, tags, attributes and
         // pseudo-classes never cause a removal: matching them needs the
         // rendered page, and guessing wrong would delete CSS that is used.
@@ -302,6 +393,22 @@ fn component_can_match(component: &Component<'_>, used: &impl UsedNames) -> bool
         // their parent was kept.
         _ => true,
     }
+}
+
+/// Returns `true` if a class or id the selector requires matches one of
+/// `patterns`. Names inside `:not()` and `:has()` don't count: they describe
+/// what the element is *not* or what it contains.
+fn mentions(selector: &Selector<'_>, patterns: &[Pattern]) -> bool {
+    !patterns.is_empty()
+        && selector
+            .iter_raw_match_order()
+            .any(|component| match component {
+                Component::Class(name) | Component::ID(name) => any_matches(patterns, &name.0),
+                Component::Is(list) | Component::Where(list) | Component::Any(_, list) => {
+                    list.iter().any(|inner| mentions(inner, patterns))
+                }
+                _ => false,
+            })
 }
 
 fn count_selectors<R>(rules: &CssRuleList<'_, R>) -> usize {
@@ -618,6 +725,340 @@ mod tests {
         assert_eq!(prune_min(css, &["a"]), expected);
     }
 
+    fn prune_with(css: &str, used: &[&str], options: &PruneOptions) -> PruneOutput {
+        let used: BTreeSet<&str> = used.iter().copied().collect();
+        match prune(css, &used, &options.clone().minify(true)) {
+            Ok(output) => output,
+            Err(err) => panic!("prune failed: {err}"),
+        }
+    }
+
+    fn safelist_options(safelist: Safelist) -> PruneOptions {
+        PruneOptions::default().safelist(safelist)
+    }
+
+    fn exact(name: &str) -> Pattern {
+        Pattern::exact(name)
+    }
+
+    fn regex(source: &str) -> Pattern {
+        Pattern::regex(source).unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    #[rstest]
+    #[case::exact_name(".is-open{color:red}", Safelist::default().standard(exact("is-open")), ".is-open{color:red}")]
+    #[case::regex_name(".btn-x{color:red}", Safelist::default().standard(regex("^btn-")), ".btn-x{color:red}")]
+    #[case::escaped_name(r".md\:flex{display:flex}", Safelist::default().standard(exact("md:flex")), r".md\:flex{display:flex}")]
+    #[case::still_needs_other_classes(".is-open .menu{color:red}", Safelist::default().standard(exact("is-open")), "")]
+    #[case::id(".x,#nav{color:red}", Safelist::default().standard(exact("nav")), "#nav{color:red}")]
+    fn standard_safelist_should_count_names_as_used(
+        #[case] css: &str,
+        #[case] safelist: Safelist,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            prune_with(css, &[], &safelist_options(safelist)).css,
+            expected
+        );
+    }
+
+    #[test]
+    fn greedy_safelist_should_keep_selectors_containing_a_match() {
+        let options = safelist_options(Safelist::default().greedy(regex("^swiper")));
+        let css = ".swiper-slide .unused{color:red}";
+        assert_eq!(prune_with(css, &[], &options).css, css);
+    }
+
+    #[test]
+    fn greedy_safelist_should_still_prune_nested_rules() {
+        let options = safelist_options(Safelist::default().greedy(exact("g")));
+        let css = ".g{color:red;& .unused{color:blue}}";
+        assert_eq!(prune_with(css, &[], &options).css, ".g{color:red}");
+    }
+
+    #[test]
+    fn deep_safelist_should_keep_nested_rules_too() {
+        let options = safelist_options(Safelist::default().deep(exact("prose")));
+        let css = ".prose{color:red;& .unused{color:red}}";
+        assert_eq!(prune_with(css, &[], &options).css, css);
+    }
+
+    #[test]
+    fn safelist_should_not_look_inside_not() {
+        let options = safelist_options(Safelist::default().greedy(exact("x")));
+        assert_eq!(prune_with(".b:not(.x){color:red}", &[], &options).css, "");
+    }
+
+    // Keyframes (rule 5): referenced through any property, including
+    // prefixed and shorthand forms, or from content.
+    #[rstest]
+    #[case::animation_name(".a{animation-name:spin}@keyframes spin{to{opacity:0}}")]
+    #[case::animation_shorthand(
+        ".a{animation:spin 1s linear infinite}@keyframes spin{to{opacity:0}}"
+    )]
+    #[case::webkit_prefixed(".a{-webkit-animation:spin 1s}@-webkit-keyframes spin{to{opacity:0}}")]
+    #[case::through_variable(
+        ":root{--anim:spin 1s}.a{animation:var(--anim)}@keyframes spin{to{opacity:0}}"
+    )]
+    #[case::nested_in_media("@media print{.a{animation:spin 1s}@keyframes spin{to{opacity:0}}}")]
+    fn keyframes_should_be_kept_when_referenced(#[case] css: &str) {
+        let output = prune_with(css, &["a"], &PruneOptions::default().keyframes(true));
+        assert_eq!(output.removed_keyframes, 0);
+    }
+
+    #[test]
+    fn keyframes_should_be_removed_when_unreferenced() {
+        let options = PruneOptions::default().keyframes(true);
+        let css = ".a{color:red}@keyframes spin{to{opacity:0}}";
+        assert_eq!(prune_with(css, &["a"], &options).css, ".a{color:red}");
+    }
+
+    #[test]
+    fn keyframes_should_be_removed_when_only_removed_rules_used_them() {
+        let options = PruneOptions::default().keyframes(true);
+        let css = ".gone{animation:spin 1s}@keyframes spin{to{opacity:0}}";
+        assert_eq!(prune_with(css, &[], &options).css, "");
+    }
+
+    #[test]
+    fn keyframes_should_be_kept_when_content_mentions_them() {
+        // e.g. `el.style.animationName = "spin"` in a script.
+        let options = PruneOptions::default().keyframes(true);
+        let css = "@keyframes spin{to{opacity:0}}";
+        assert_eq!(prune_with(css, &["spin"], &options).removed_keyframes, 0);
+    }
+
+    #[test]
+    fn keyframes_should_be_kept_by_default() {
+        let css = "@keyframes spin{to{opacity:0}}";
+        assert_eq!(
+            prune_with(css, &[], &PruneOptions::default()).removed_keyframes,
+            0
+        );
+    }
+
+    #[test]
+    fn keyframes_safelist_should_keep_unreferenced_keyframes() {
+        let options = PruneOptions::default()
+            .keyframes(true)
+            .safelist(Safelist::default().keyframes(exact("spin")));
+        let css = "@keyframes spin{to{opacity:0}}";
+        assert_eq!(prune_with(css, &[], &options).removed_keyframes, 0);
+    }
+
+    // Fonts (rule 5): `font-family` and the `font` shorthand both count.
+    #[rstest]
+    #[case::font_family(
+        ".a{font-family:Inter,sans-serif}@font-face{font-family:Inter;src:url(i.woff2)}"
+    )]
+    #[case::font_shorthand(".a{font:16px/1.5 Inter}@font-face{font-family:Inter;src:url(i.woff2)}")]
+    #[case::quoted_with_spaces(
+        r#".a{font-family:"Open Sans"}@font-face{font-family:"Open Sans";src:url(o.woff2)}"#
+    )]
+    #[case::case_insensitive(".a{font-family:inter}@font-face{font-family:Inter;src:url(i.woff2)}")]
+    #[case::through_variable(
+        ":root{--font:Inter}.a{font-family:var(--font)}@font-face{font-family:Inter;src:url(i.woff2)}"
+    )]
+    fn font_face_should_be_kept_when_referenced(#[case] css: &str) {
+        let output = prune_with(css, &["a"], &PruneOptions::default().font_face(true));
+        assert_eq!(output.removed_font_faces, 0);
+    }
+
+    #[test]
+    fn font_face_should_be_removed_when_unreferenced() {
+        let options = PruneOptions::default().font_face(true);
+        let css = ".a{color:red}@font-face{font-family:Inter;src:url(i.woff2)}";
+        assert_eq!(prune_with(css, &["a"], &options).css, ".a{color:red}");
+    }
+
+    #[test]
+    fn font_face_should_be_kept_when_content_mentions_every_word() {
+        // e.g. an inline `style="font-family: 'Open Sans'"`.
+        let options = PruneOptions::default().font_face(true);
+        let css = r#"@font-face{font-family:"Open Sans";src:url(o.woff2)}"#;
+        assert_eq!(
+            prune_with(css, &["Open", "Sans"], &options).removed_font_faces,
+            0
+        );
+    }
+
+    // Variables (rule 6): follow var() chains; content counts as a reader.
+    #[test]
+    fn variables_should_keep_those_read_by_kept_rules() {
+        let options = PruneOptions::default().variables(true);
+        let css = ":root{--used:red;--unused:blue}.a{color:var(--used)}";
+        assert_eq!(
+            prune_with(css, &["a"], &options).css,
+            ":root{--used:red}.a{color:var(--used)}"
+        );
+    }
+
+    #[test]
+    fn variables_should_follow_chains() {
+        let options = PruneOptions::default().variables(true);
+        let css = ":root{--base:red;--brand:var(--base)}.a{color:var(--brand)}";
+        assert_eq!(prune_with(css, &["a"], &options).removed_variables, 0);
+    }
+
+    #[test]
+    fn variables_should_remove_chains_nobody_reads() {
+        let options = PruneOptions::default().variables(true);
+        let css = ":root{--base:red;--brand:var(--base)}.a{color:red}";
+        assert_eq!(prune_with(css, &["a"], &options).removed_variables, 2);
+    }
+
+    #[test]
+    fn variables_should_drop_rules_they_emptied() {
+        let options = PruneOptions::default().variables(true);
+        let css = ":root{--unused:red}.a{color:red}";
+        assert_eq!(prune_with(css, &["a"], &options).css, ".a{color:red}");
+    }
+
+    #[test]
+    fn variables_should_keep_those_named_in_content() {
+        // e.g. `getComputedStyle(el).getPropertyValue("--theme")`.
+        let options = PruneOptions::default().variables(true);
+        let css = ":root{--theme:dark}";
+        assert_eq!(prune_with(css, &["--theme"], &options).removed_variables, 0);
+    }
+
+    #[test]
+    fn variables_should_keep_those_read_by_removed_selectors_only_if_also_read_elsewhere() {
+        let options = PruneOptions::default().variables(true);
+        let css = ":root{--x:red}.gone{color:var(--x)}";
+        assert_eq!(prune_with(css, &[], &options).css, "");
+    }
+
+    #[test]
+    fn variables_safelist_should_keep_unread_variables() {
+        let options = PruneOptions::default()
+            .variables(true)
+            .safelist(Safelist::default().variables(regex("^brand-")));
+        let css = ":root{--brand-red:red}";
+        assert_eq!(prune_with(css, &[], &options).removed_variables, 0);
+    }
+
+    // Every place a declaration can live must be both read and cleaned.
+    #[rstest]
+    #[case::media("@media print{:root{--x:red;--y:red}.a{color:var(--x)}}")]
+    #[case::supports("@supports (color:red){:root{--x:red;--y:red}.a{color:var(--x)}}")]
+    #[case::container("@container (width>1px){:root{--x:red;--y:red}.a{color:var(--x)}}")]
+    #[case::scope("@scope (.s){:root{--x:red;--y:red}.a{color:var(--x)}}")]
+    #[case::starting_style("@starting-style{:root{--x:red;--y:red}.a{color:var(--x)}}")]
+    #[case::moz_document("@-moz-document url-prefix(){:root{--x:red;--y:red}.a{color:var(--x)}}")]
+    #[case::named_layer("@layer base{:root{--x:red;--y:red}.a{color:var(--x)}}")]
+    #[case::nested_rule(".a{color:var(--x);& .b{--x:red;--y:red}}")]
+    #[case::nested_declarations(
+        ".a{color:red;&:hover{color:blue}--x:red;--y:red;background:var(--x)}"
+    )]
+    #[case::legacy_nest(".a{color:var(--x);@nest .b &{--x:red;--y:red}}")]
+    fn variables_should_be_tracked_in_every_kind_of_block(#[case] css: &str) {
+        let options = PruneOptions::default().variables(true);
+        assert_eq!(
+            prune_with(css, &["a", "b", "s"], &options).removed_variables,
+            1
+        );
+    }
+
+    #[rstest]
+    #[case::supports("@supports (color:red){:root{--y:red}}")]
+    #[case::container("@container (width>1px){:root{--y:red}}")]
+    #[case::nested_declarations(".a{&:hover{color:red}--y:red}")]
+    #[case::legacy_nest(".a{color:red;@nest .b &{--y:red}}")]
+    fn variables_should_drop_blocks_they_emptied(#[case] css: &str) {
+        let options = PruneOptions::default().variables(true);
+        let output = prune_with(css, &["a", "b"], &options).css;
+        assert!(!output.contains("--y"), "{output}");
+    }
+
+    #[test]
+    fn variables_should_keep_named_layers_they_emptied() {
+        let options = PruneOptions::default().variables(true);
+        assert_eq!(
+            prune_with("@layer base{:root{--y:red}}", &[], &options).css,
+            "@layer base{}"
+        );
+    }
+
+    // Animating a registered custom property is legitimate, so variables
+    // inside keyframe steps are never removed.
+    #[test]
+    fn variables_should_leave_keyframes_untouched() {
+        let options = PruneOptions::default().variables(true);
+        let css = "@keyframes pulse{to{--glow:1}}";
+        assert_eq!(prune_with(css, &[], &options).css, css);
+    }
+
+    #[test]
+    fn variables_should_leave_unknown_properties_alone() {
+        let options = PruneOptions::default().variables(true);
+        let css = ".a{foo:bar}";
+        assert_eq!(prune_with(css, &["a"], &options).css, css);
+    }
+
+    #[rstest]
+    #[case::supports("@supports (color:red){.a{animation:spin 1s}}@keyframes spin{to{opacity:0}}")]
+    #[case::container(
+        "@container (width>1px){.a{animation:spin 1s}}@keyframes spin{to{opacity:0}}"
+    )]
+    #[case::scope("@scope (.s){.a{animation:spin 1s}}@keyframes spin{to{opacity:0}}")]
+    #[case::starting_style("@starting-style{.a{animation:spin 1s}}@keyframes spin{to{opacity:0}}")]
+    #[case::moz_document(
+        "@-moz-document url-prefix(){.a{animation:spin 1s}}@keyframes spin{to{opacity:0}}"
+    )]
+    #[case::layer("@layer base{.a{animation:spin 1s}}@keyframes spin{to{opacity:0}}")]
+    #[case::nested_rule(".x{& .a{animation:spin 1s}}@keyframes spin{to{opacity:0}}")]
+    #[case::nested_declarations(
+        ".a{&:hover{color:red}animation:spin 1s}@keyframes spin{to{opacity:0}}"
+    )]
+    #[case::legacy_nest(
+        ".x{color:red;@nest .a &{animation:spin 1s}}@keyframes spin{to{opacity:0}}"
+    )]
+    #[case::string_name(r#".a{animation-name:"spin"}@keyframes "spin"{to{opacity:0}}"#)]
+    fn keyframes_should_find_references_in_every_kind_of_block(#[case] css: &str) {
+        let options = PruneOptions::default().keyframes(true);
+        assert_eq!(
+            prune_with(css, &["a", "x", "s"], &options).removed_keyframes,
+            0
+        );
+    }
+
+    #[rstest]
+    #[case::inside_media("@media print{@keyframes spin{to{opacity:0}}}", "")]
+    #[case::inside_supports("@supports (color:red){@keyframes spin{to{opacity:0}}}", "")]
+    #[case::inside_named_layer("@layer base{@keyframes spin{to{opacity:0}}}", "@layer base{}")]
+    #[case::string_name(r#"@keyframes "spin"{to{opacity:0}}"#, "")]
+    fn keyframes_should_be_removed_wherever_they_are_defined(
+        #[case] css: &str,
+        #[case] expected: &str,
+    ) {
+        let options = PruneOptions::default().keyframes(true);
+        assert_eq!(prune_with(css, &[], &options).css, expected);
+    }
+
+    #[test]
+    fn font_face_should_be_kept_when_it_has_no_family() {
+        let options = PruneOptions::default().font_face(true);
+        let css = "@font-face{src:url(x.woff2)}";
+        assert_eq!(prune_with(css, &[], &options).removed_font_faces, 0);
+    }
+
+    #[test]
+    fn greedy_safelist_should_look_inside_is() {
+        let options = safelist_options(Safelist::default().greedy(exact("x")));
+        let css = ":is(.x,.y) .unused{color:red}";
+        assert_eq!(prune_with(css, &[], &options).css, css);
+    }
+
+    #[test]
+    fn variables_should_be_kept_by_default() {
+        let css = ":root{--unused:red}";
+        assert_eq!(
+            prune_with(css, &[], &PruneOptions::default()).removed_variables,
+            0
+        );
+    }
+
     mod properties {
         use super::*;
         use proptest::prelude::*;
@@ -642,6 +1083,23 @@ mod tests {
             fn prune_never_panics_on_arbitrary_text(css in ".{0,200}") {
                 let used = BTreeSet::from(["a"]);
                 let _ = prune(&css, &used, &PruneOptions::default());
+            }
+
+            #[test]
+            fn greedy_safelisted_selectors_always_survive(css in stylesheet(), used in used_names()) {
+                let options = PruneOptions::default().safelist(Safelist::default().greedy(Pattern::exact("a")));
+                let output = prune_with(&css, &used, &options).css;
+                let rules_with_a = |text: &str| text.split('}').filter(|rule| rule.contains(".a")).count();
+                prop_assert_eq!(rules_with_a(&output), rules_with_a(&css));
+            }
+
+            #[test]
+            fn tracking_never_removes_ordinary_style_rules(css in stylesheet(), used in used_names()) {
+                let tracked = PruneOptions::default().keyframes(true).font_face(true).variables(true);
+                prop_assert_eq!(
+                    prune_with(&css, &used, &tracked).css,
+                    prune_with(&css, &used, &PruneOptions::default()).css
+                );
             }
 
             #[test]

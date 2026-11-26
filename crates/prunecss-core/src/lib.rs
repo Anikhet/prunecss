@@ -11,9 +11,13 @@
 //! [`prune`] does steps 2 and 3.
 
 mod pruner;
+mod rules;
+mod safelist;
 mod scanner;
+mod tracking;
 
 pub use pruner::{
     PruneError, PruneErrorKind, PruneOptions, PruneOutput, SourceLocation, UsedNames, prune,
 };
+pub use safelist::{Pattern, PatternError, Safelist};
 pub use scanner::extract_classes;
