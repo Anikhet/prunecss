@@ -112,10 +112,11 @@ jobs:
         with:
           ref: refs/tags/${{ needs.plan.outputs.tag }}
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update --target "$TARGET"
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
+          rustup target add "$TARGET"
       # No rust-cache: release binaries are always built from scratch so a
       # poisoned cache can never end up in a shipped artifact.
       - uses: taiki-e/install-action@073e1fd0bc889c9aee68dbaaa927cde1b5653a83 # v2.90.11

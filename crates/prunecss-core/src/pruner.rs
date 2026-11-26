@@ -977,7 +977,7 @@ mod tests {
     #[case::font_face("@font-face{font-family:X;src:url(x.woff2)}")]
     #[case::property("@property --x{syntax:\"<length>\";inherits:false;initial-value:0}")]
     fn prune_should_keep_named_at_rules_for_now(#[case] css: &str) {
-        assert!(!prune_min(css, &[]).is_empty());
+        assert_ne!(prune_min(css, &[]), "");
     }
 
     #[test]

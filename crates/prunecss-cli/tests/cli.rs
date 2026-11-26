@@ -81,7 +81,7 @@ fn prune_should_write_to_the_output_file() {
     let _ = std::fs::remove_file(&out);
 
     assert!(output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(stdout(&output), "");
     assert!(written.contains(".btn-primary"));
 }
 
@@ -409,7 +409,7 @@ fn check_should_write_nothing() {
         ],
         None,
     );
-    assert!(output.stdout.is_empty());
+    assert_eq!(stdout(&output), "");
     assert!(!dir.path().join("out.css").exists());
 }
 

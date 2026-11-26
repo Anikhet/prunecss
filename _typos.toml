@@ -1,0 +1,17 @@
+# Spell check, run in CI with `typos` (https://github.com/crate-ci/typos).
+[files]
+extend-exclude = [
+    "**/snapshots/**",
+    "bench/corpus/**",
+    "bench/results/**",
+    "fuzz/corpus/**",
+    "fuzz/regressions/**",
+    "fuzz/dict/**",
+    "*.lock",
+    "bench/package-lock.json",
+]
+
+[default.extend-words]
+# Deliberate misspellings that test config-key error messages.
+contnet = "contnet"
+safelsit = "safelsit"

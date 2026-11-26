@@ -1,0 +1,9 @@
+# The toolchain for development and CI. Pinned so a new stable release
+# can't break the build with new lints overnight; Dependabot doesn't bump
+# this, so update it deliberately (and fix any new Clippy findings).
+# The minimum supported version (1.88, `rust-version`) is checked
+# separately in CI with RUSTUP_TOOLCHAIN, which overrides this file.
+[toolchain]
+channel = "1.100.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

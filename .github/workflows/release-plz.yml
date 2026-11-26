@@ -43,10 +43,10 @@ jobs:
           # release-plz needs the full history to find the previous release.
           fetch-depth: 0
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
       # No rust-cache here: published crates must never be built from a cache
       # that some other run wrote.
       - name: Run release-plz
@@ -103,10 +103,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
       - name: Run release-plz
         uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         with:

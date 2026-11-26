@@ -1,17 +1,48 @@
 # prunecss
 
-Remove unused CSS, fast. Written in Rust.
+**Remove unused CSS, fast.** A Rust alternative to
+[PurgeCSS](https://github.com/FullHuman/purgecss): it scans your HTML, JSX and
+templates for the class names they use, then removes the CSS rules that can
+never match.
 
-[Changelog](CHANGELOG.md) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)
+[![CI](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml/badge.svg)](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/prunecss.svg)](https://crates.io/crates/prunecss)
+[![docs.rs](https://img.shields.io/docsrs/prunecss-core)](https://docs.rs/prunecss-core)
+[![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue)](Cargo.toml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+
+<p align="center">
+  <img alt="Wall time to prune: prunecss 18 ms vs PurgeCSS 237 ms on Bootstrap, 36 vs 320 ms on Bulma, 156 vs 851 ms on Tailwind" src="assets/benchmark.svg" width="720">
+</p>
+
+- **5–24× faster than the PurgeCSS CLI** (median 9×), with 1.5–8× less memory.
+  See [BENCHMARKS.md](BENCHMARKS.md).
+- **Errs on the side of keeping CSS.** On the benchmark corpora prunecss
+  removed nothing a static page needs; PurgeCSS's default extractor removed
+  376 such rules on Tailwind.
+- **Drop-in options.** `prunecss.json` uses PurgeCSS's option names, with a
+  JSON Schema for editor autocompletion.
+- **Built for CI.** `--check` fails the build when CSS is unused, `--json`
+  gives a machine-readable report, and exit codes are stable.
+- **Understands modern markup.** Tailwind-style names (`md:flex`, `w-1/2`,
+  `w-[10px]`), JSX, Vue, Svelte, Astro and Angular class syntax.
+
+[Install](#install) · [Usage](#usage) · [FAQ](FAQ.md) ·
+[Benchmarks](BENCHMARKS.md) · [Changelog](CHANGELOG.md) ·
+[Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)
 
 > **Status: early development (0.x).** Review the output before shipping it,
-> and report anything wrongly removed.
+> and [report anything wrongly removed](https://github.com/Anikhet/prunecss/issues/new?template=false_removal.yml).
 
-Websites often ship a large stylesheet (all of Bootstrap, an old design system)
-while each page uses a fraction of it. `prunecss` scans your HTML, JSX and
-templates for the class names they actually use, then removes the CSS rules
-that can never match. The goal is to be a much faster drop-in alternative to
-[PurgeCSS](https://github.com/FullHuman/purgecss).
+## Install
+
+```bash
+cargo install prunecss --locked
+```
+
+Prebuilt binaries for Linux, macOS and Windows are attached to each
+[GitHub release](https://github.com/Anikhet/prunecss/releases), with build
+provenance attestations. An npm package is on the [roadmap](#roadmap).
 
 ## Usage
 
@@ -155,8 +186,9 @@ before writing code. [ARCHITECTURE.md](ARCHITECTURE.md) gives a short tour of
 the code, and [docs/adr/](docs/adr/) records the main design decisions.
 
 prunecss is built with AI assistance (Claude Code), and every change is
-reviewed and tested by the maintainer. It is maintained by one person in
-their spare time; expect replies within one to two weeks.
+reviewed and tested by the maintainer; see [AI_POLICY.md](AI_POLICY.md).
+It is maintained by one person in their spare time; expect replies within
+one to two weeks.
 
 - Questions: see [SUPPORT.md](SUPPORT.md)
 - CSS wrongly removed? [Report a false removal](https://github.com/Anikhet/prunecss/issues/new?template=false_removal.yml)

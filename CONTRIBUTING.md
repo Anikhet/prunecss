@@ -56,8 +56,11 @@ decisions are recorded in [docs/adr/](docs/adr/).
 
 ## Development setup
 
-You need **Rust 1.88 or newer** (the minimum supported Rust version). Install
-it with [rustup](https://rustup.rs/).
+Install Rust with [rustup](https://rustup.rs/). The repository pins the
+toolchain it is developed with in `rust-toolchain.toml`, so rustup downloads
+the right version on the first `cargo` command. The code itself must keep
+building on **Rust 1.88** (the minimum supported Rust version); CI checks
+that.
 
 ```bash
 git clone https://github.com/Anikhet/prunecss
@@ -80,7 +83,13 @@ CI runs these on every pull request. Run them locally before you push:
 cargo fmt --check
 cargo clippy --all-targets --all-features --locked -- -D warnings
 cargo test
+typos
 ```
+
+With [just](https://github.com/casey/just) installed, `just check` runs all
+four, and `just` lists the other recipes (`just ci` runs nearly everything CI
+does). [typos](https://github.com/crate-ci/typos) is a spell checker:
+`cargo install typos-cli`. A word it flags wrongly goes in `_typos.toml`.
 
 Optional tools:
 
@@ -229,7 +238,7 @@ review.
 
 **The maintainer builds prunecss with AI assistance.** Much of the code is
 written together with Claude Code, an AI coding tool. The project's
-instructions for it are in [CLAUDE.md](CLAUDE.md), and commits it helped with
+instructions for AI agents are in [AGENTS.md](AGENTS.md), and commits it helped with
 carry a `Co-Authored-By` line. I review every change, and every change must
 pass the same tests, lints and checks described above.
 
@@ -255,6 +264,7 @@ So AI tools are welcome here. These rules apply to everyone:
   review.
 
 This policy is based on those of Astral, Biome, oxc, Ghostty and curl.
+[AI_POLICY.md](AI_POLICY.md) has a short summary.
 
 ## License
 

@@ -38,10 +38,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update --component rustfmt
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
       - run: cargo fmt --all --check
 
   clippy:
@@ -52,10 +52,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update --component clippy
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # Only `main` writes the cache, so a pull request cannot poison it.
@@ -73,7 +73,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        toolchain: [stable]
+        # `pinned` is rust-toolchain.toml; beta warns about the next release.
+        toolchain: [pinned]
         include:
           - os: ubuntu-latest
             toolchain: beta
@@ -87,8 +88,13 @@ jobs:
         env:
           TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
-          rustup toolchain install "$TOOLCHAIN" --profile minimal --no-self-update
-          rustup default "$TOOLCHAIN"
+          if [ "$TOOLCHAIN" = pinned ]; then
+            rustup toolchain install --no-self-update
+          else
+            rustup toolchain install "$TOOLCHAIN" --profile minimal --no-self-update
+            # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml.
+            echo "RUSTUP_TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
+          fi
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -100,6 +106,9 @@ jobs:
     name: Minimum supported Rust (1.88)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Overrides rust-toolchain.toml, so this really builds with 1.88.
+      RUSTUP_TOOLCHAIN: "1.88"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,7 +116,6 @@ jobs:
       - name: Install Rust (1.88)
         run: |
           rustup toolchain install 1.88 --profile minimal --no-self-update
-          rustup default 1.88
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -124,10 +132,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -141,10 +149,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -162,10 +170,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update --component llvm-tools-preview
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
+          rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -202,10 +211,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust (stable)
+      - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -238,6 +247,20 @@ jobs:
 
   # The single check that branch protection requires. Add new jobs to `needs`
   # and the ruleset never has to change when the matrix does.
+  typos:
+    name: Spelling
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@073e1fd0bc889c9aee68dbaaa927cde1b5653a83 # v2.90.11
+        with:
+          tool: typos@1.52.2
+      # Configured in _typos.toml.
+      - run: typos
+
   ci-success:
     name: CI success
     if: always()
@@ -252,6 +275,7 @@ jobs:
       - deny
       - package
       - workflows
+      - typos
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
