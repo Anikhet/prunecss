@@ -729,3 +729,80 @@ fn json_report_should_list_unreadable_rules() {
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["files"][0]["warnings"][0]["line"], 2);
 }
+
+// ---- Second review --------------------------------------------------------
+
+#[test]
+fn output_should_refuse_to_overwrite_a_named_input_inside_the_output_directory() {
+    let dir = project(&[
+        ("index.html", r#"<p class="x v">"#),
+        ("src/x.css", ".x{color:red}"),
+        ("src/y.css", ".y{color:red}"),
+        ("src/vendor/x.css", "/* VENDOR ORIGINAL */ .v{color:red}"),
+    ]);
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "src/x.css",
+            "src/y.css",
+            "src/vendor/x.css",
+            "-c",
+            "index.html",
+            "-o",
+            "src/vendor/",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(read(&dir.path().join("src/vendor/x.css")).contains("VENDOR ORIGINAL"));
+}
+
+#[test]
+fn output_should_accept_a_named_input_inside_the_output_directory_when_safe() {
+    let dir = project(&[
+        ("i.html", r#"<p class="a">"#),
+        ("build/css/main.css", ".a{color:red}"),
+    ]);
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "build/css/main.css",
+            "-c",
+            "i.html",
+            "-o",
+            "build/",
+        ],
+        None,
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(dir.path().join("build/main.css").is_file());
+}
+
+#[test]
+fn check_should_pass_for_rules_kept_as_written() {
+    let dir = project(&[
+        ("i.html", r#"<p class="a">"#),
+        ("ck.css", "@tailwind base;\n.a{color:red}\n"),
+    ]);
+    let output = run_in(
+        dir.path(),
+        &["prune", "ck.css", "-c", "i.html", "--check"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(!stderr(&output).contains("dropped"), "{}", stderr(&output));
+}
+
+#[test]
+fn prune_should_survive_deep_nesting_on_the_main_thread() {
+    let dir = project(&[("i.html", r#"<p class="a">"#)]);
+    std::fs::write(
+        dir.path().join("d.css"),
+        ".a{b:url(x\")}".to_owned() + &".a{".repeat(5000),
+    )
+    .unwrap();
+    let output = run_in(dir.path(), &["prune", "d.css", "-c", "i.html"], None);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+}

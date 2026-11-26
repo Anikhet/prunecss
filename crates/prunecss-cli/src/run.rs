@@ -159,7 +159,8 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
                 input.label()
             );
         }
-        print_warnings(&input.label(), &pruned.warnings);
+        let dropped: Vec<&ParseWarning> = pruned.warnings.iter().filter(|w| w.dropped).collect();
+        print_warnings(&input.label(), &dropped);
         if !settings.check {
             write_output(destination.as_deref(), &pruned.css)?;
         }
@@ -175,6 +176,7 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
             warnings: pruned
                 .warnings
                 .iter()
+                .filter(|warning| warning.dropped)
                 .map(|warning| WarningReport {
                     message: warning.message.clone(),
                     line: warning.location.map(|location| location.line),
@@ -236,23 +238,40 @@ fn css_inputs(settings: &PruneSettings, output: Option<&Path>) -> Result<Vec<Inp
     if let Some(pattern) = expanded.unmatched.first() {
         bail!("no stylesheet matched `{pattern}`");
     }
-    let mut files = expanded.files;
+    let matched = expanded.files;
     // Leave earlier results alone: with `css: ["**/*.css"]` and an output
     // directory inside the project, the next run would prune its own output.
-    if let Some(output) =
-        output.filter(|output| is_directory_like(output, settings.output.as_deref()))
-    {
-        let output = files::normalize(output);
-        let before = files.len();
-        files.retain(|file| !files::normalize(file).starts_with(&output));
-        if files.is_empty() && before > 0 {
-            bail!(
-                "every matched stylesheet is inside the output directory {}",
-                display(&output)
-            );
+    // Only glob and directory matches are skipped. A file the user named is
+    // always an input, so the overwrite check in `plan_outputs` protects it.
+    let mut skipped = 0_usize;
+    let mut files = Vec::with_capacity(matched.len());
+    let output_dir = output
+        .filter(|output| is_directory_like(output, settings.output.as_deref()))
+        .map(files::normalize);
+    for file in &matched {
+        let inside_output = output_dir
+            .as_ref()
+            .is_some_and(|dir| files::normalize(file).starts_with(dir));
+        if inside_output && !named_explicitly(file, patterns, &settings.css.base) {
+            skipped += 1;
+        } else {
+            files.push(file.clone());
         }
     }
+    if skipped > 0 {
+        eprintln!("note: skipping {skipped} stylesheet(s) inside the output directory");
+    }
+    if files.is_empty() {
+        bail!("every matched stylesheet is inside the output directory");
+    }
     Ok(files.into_iter().map(Input::File).collect())
+}
+
+fn named_explicitly(file: &Path, patterns: &[String], base: &Path) -> bool {
+    let file = files::normalize(file);
+    patterns
+        .iter()
+        .any(|pattern| files::normalize(&base.join(pattern)) == file)
 }
 
 /// `--output` names a directory if it already is one, or ends with `/`.
@@ -319,10 +338,10 @@ fn plan_outputs(
                 display(destination)
             );
         }
-        if input_paths
+        let overwrites = input_paths
             .iter()
-            .any(|input| same_file(input, destination))
-        {
+            .any(|input| same_file(input, destination));
+        if overwrites {
             bail!(
                 "refusing to overwrite the input {}; choose a different --output",
                 display(destination)
@@ -434,7 +453,7 @@ fn write_output(destination: Option<&Path>, css: &str) -> Result<()> {
 }
 
 /// Shows each rule the parser dropped, so nothing disappears silently.
-fn print_warnings(label: &str, warnings: &[ParseWarning]) {
+fn print_warnings(label: &str, warnings: &[&ParseWarning]) {
     const SHOWN: usize = 10;
     for warning in warnings.iter().take(SHOWN) {
         let position = warning

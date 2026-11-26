@@ -69,7 +69,11 @@ fn collect<'t>(text: &'t str, emit: &mut impl FnMut(&'t str)) {
     // union of both readings finds the names either way.
     // Without brackets, `+` or `~` the two readings give the same tokens.
     let readings: &[Brackets] = if text.contains(['[', ']', '+', '~']) {
-        &[Brackets::KeepWhole, Brackets::Split]
+        &[
+            Brackets::KeepWhole,
+            Brackets::KeepWholeQuotesEnd,
+            Brackets::Split,
+        ]
     } else {
         &[Brackets::KeepWhole]
     };
@@ -155,8 +159,13 @@ fn decode_one(text: &str) -> Option<(char, usize)> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Brackets {
-    /// Keep `[…]` groups whole, as in Tailwind arbitrary values.
+    /// Keep `[…]` groups whole, quotes included, as in Tailwind arbitrary
+    /// values (`bg-[url('/a.png')]`).
     KeepWhole,
+    /// Keep `[…]` groups whole but end names at quotes, for names quoted
+    /// inside a JavaScript array: `["w-[10px]", "p-4"]`. Without this, the
+    /// outer `[` would swallow both names.
+    KeepWholeQuotesEnd,
     /// Treat brackets as separators, as in JavaScript arrays.
     Split,
 }
@@ -227,7 +236,7 @@ impl<'a> Iterator for Tokens<'a> {
                         Brackets::Split => {
                             is_soft_delimiter(byte) || matches!(byte, b'[' | b']' | b'+' | b'~')
                         }
-                        Brackets::KeepWhole => {
+                        Brackets::KeepWhole | Brackets::KeepWholeQuotesEnd => {
                             match byte {
                                 b'[' => depth += 1,
                                 b']' => depth = depth.saturating_sub(1),
@@ -374,6 +383,10 @@ mod tests {
     #[case::query_adjacent(r#"querySelector(".a+.b")"#, &["a", "b"])]
     #[case::query_sibling(r#"querySelector(".c~.d")"#, &["c", "d"])]
     #[case::js_newline_escape(r#"const html = "card\nbtn";"#, &["card", "btn"])]
+    // Second review: an outer JS/Vue array must not swallow quoted names.
+    #[case::react_children_array(r#"children:[(0,r.jsx)("div",{className:"w-[10px] p-4"})]"#, &["w-[10px]", "p-4"])]
+    #[case::vue_class_array(r#"<p :class="['w-[10px]', on && 'p-4']">"#, &["w-[10px]", "p-4"])]
+    #[case::clsx_array(r#"clsx(["grid-cols-[1fr_2fr]", "bg-[url('/a.png')]"])"#, &["grid-cols-[1fr_2fr]", "bg-[url('/a.png')]"])]
     #[case::js_unicode_escape(r#"const html = "card\u0020btn";"#, &["btn"])]
     fn extract_classes_should_find_names_the_review_found_missing(
         #[case] source: &str,

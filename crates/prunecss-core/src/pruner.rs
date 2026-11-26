@@ -13,7 +13,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::hash::BuildHasher;
 use std::sync::{Arc, RwLock};
 
-use lightningcss::error::ParserError;
+use lightningcss::error::{ParserError, SelectorError};
 use lightningcss::rules::style::StyleRule;
 use lightningcss::rules::{CssRule, CssRuleList};
 use lightningcss::selector::{Component, PseudoClass, Selector};
@@ -167,6 +167,9 @@ pub struct ParseWarning {
     pub message: String,
     /// Where it starts in the input, if known.
     pub location: Option<SourceLocation>,
+    /// Whether the rule is missing from the output. Unknown at-rules and
+    /// pseudo-classes are warned about but kept exactly as written.
+    pub dropped: bool,
 }
 
 /// What went wrong in [`prune`]. See [`PruneError::kind`].
@@ -277,6 +280,16 @@ pub fn prune(
     used: &impl UsedNames,
     options: &PruneOptions,
 ) -> Result<PruneOutput, PruneError> {
+    // Browsers drop a leading byte-order mark; left in, it would become
+    // part of the first selector.
+    let css = css.strip_prefix('\u{feff}').unwrap_or(css);
+    // Lightning CSS reads `::-ms-input-placeholder` as `::-moz-placeholder`,
+    // and after parsing the two can't be told apart. Hide it behind a name
+    // Lightning CSS keeps as written, and restore it after printing.
+    let masked = css
+        .contains(MS_PLACEHOLDER)
+        .then(|| css.replace(MS_PLACEHOLDER, MS_PLACEHOLDER_MASK));
+    let css = masked.as_deref().unwrap_or(css);
     let warnings = Arc::new(RwLock::new(Vec::new()));
     let mut sheet = parse_sheet(css, Some(Arc::clone(&warnings)))?;
 
@@ -335,7 +348,11 @@ pub fn prune(
         .unwrap_or_default();
 
     Ok(PruneOutput {
-        css: with_charset(printed.code, css, options.minify),
+        css: with_charset(
+            unmask_placeholders(printed.code, masked.is_some()),
+            css,
+            options.minify,
+        ),
         warnings,
         removed_selectors,
         kept_named_selectors: matcher.kept_named.get(),
@@ -343,6 +360,17 @@ pub fn prune(
         removed_font_faces: tracked.font_faces,
         removed_variables: tracked.variables,
     })
+}
+
+const MS_PLACEHOLDER: &str = "::-ms-input-placeholder";
+const MS_PLACEHOLDER_MASK: &str = "::-prunecss-ms-input-placeholder";
+
+fn unmask_placeholders(code: String, masked: bool) -> String {
+    if masked {
+        code.replace(MS_PLACEHOLDER_MASK, MS_PLACEHOLDER)
+    } else {
+        code
+    }
 }
 
 /// Deeper nesting than this is refused. Real stylesheets nest a handful of
@@ -392,6 +420,14 @@ fn nesting_depth(css: &str) -> usize {
                 }
             }
             b'\\' => i += 1,
+            // `url(` without a quote is a single token up to `)`, whatever
+            // it contains, exactly as the CSS tokenizer reads it.
+            b'(' if is_unquoted_url(bytes, i) => {
+                i += bytes[i..]
+                    .iter()
+                    .position(|&b| b == b')')
+                    .unwrap_or(bytes.len() - i);
+            }
             b'{' | b'(' | b'[' => {
                 depth += 1;
                 deepest = deepest.max(depth);
@@ -402,6 +438,13 @@ fn nesting_depth(css: &str) -> usize {
         i += 1;
     }
     deepest
+}
+
+/// Whether the `(` at `open` starts an unquoted `url(...)` token.
+fn is_unquoted_url(bytes: &[u8], open: usize) -> bool {
+    let is_url = open >= 3 && bytes[open - 3..open].eq_ignore_ascii_case(b"url");
+    let first = bytes[open + 1..].iter().find(|b| !b.is_ascii_whitespace());
+    is_url && !matches!(first, Some(b'"' | b'\''))
 }
 
 /// Browser versions old enough that the printer keeps widely supported
@@ -434,7 +477,19 @@ fn with_charset(code: String, input: &str, minify: bool) -> String {
 
 impl ParseWarning {
     fn from_lightningcss(err: &lightningcss::error::Error<ParserError<'_>>) -> Self {
+        // These are printed unchanged: `@tailwind base;`, `.a:foo`, and a
+        // stray `}` at the end, which has nothing to drop.
+        let kept = matches!(
+            err.kind,
+            ParserError::AtRuleInvalid(_)
+                | ParserError::EndOfInput
+                | ParserError::SelectorError(
+                    SelectorError::UnsupportedPseudoClass(_)
+                        | SelectorError::UnsupportedPseudoElement(_)
+                )
+        );
         Self {
+            dropped: !kept,
             message: err.kind.to_string(),
             location: err.loc.as_ref().map(|loc| SourceLocation {
                 line: loc.line.saturating_add(1),
@@ -460,7 +515,7 @@ impl ParseWarning {
 /// Returns a [`PruneErrorKind::Parse`] error if the stylesheet cannot be
 /// parsed even with error recovery.
 pub fn defined_names(css: &str) -> Result<BTreeSet<String>, PruneError> {
-    let sheet = parse_sheet(css, None)?;
+    let sheet = parse_sheet(css.strip_prefix('\u{feff}').unwrap_or(css), None)?;
     let mut names = BTreeSet::new();
     collect_rule_names(&sheet.rules, &mut names);
     Ok(names)
@@ -645,7 +700,13 @@ fn keep_style_rule<R, U: UsedNames>(
                 || selector_can_match(selector, matcher)
         })
         .collect();
-    if !style.rules.0.is_empty() {
+    let keeps_some = keep.iter().any(|kept| *kept);
+    // Prune the nested rules first: whether the parent list's specificity
+    // must be preserved depends on whether any nested rule survives.
+    if keeps_some && !keeps_children {
+        prune_rules(&mut style.rules, matcher, removed);
+    }
+    if keeps_some && !style.rules.0.is_empty() {
         keep_nesting_specificity(&style.selectors.0, &mut keep);
     }
     let mut decisions = keep.into_iter();
@@ -666,9 +727,6 @@ fn keep_style_rule<R, U: UsedNames>(
         // Nested rules are relative to this one, so they go with it.
         *removed += count_selectors(&style.rules);
         return false;
-    }
-    if !keeps_children {
-        prune_rules(&mut style.rules, matcher, removed);
     }
     true
 }
@@ -1472,6 +1530,8 @@ mod tests {
     #[case::nested("input{color:red;&:-ms-input-placeholder{color:red}}")]
     #[case::in_media("@media print{input:-moz-placeholder{color:red}}")]
     #[case::pseudo_element_unchanged("input::-moz-placeholder{color:red}")]
+    // Second review: Lightning CSS reads this as `::-moz-placeholder`.
+    #[case::ms_pseudo_element("input::-ms-input-placeholder{color:red}")]
     #[case::standard_unchanged("input:placeholder-shown{color:red}")]
     fn prune_should_print_legacy_placeholder_selectors_as_written(#[case] css: &str) {
         assert_eq!(prune_min(css, &[]), css);
@@ -1500,6 +1560,18 @@ mod tests {
         assert!(prune_min(css, &["a"]).starts_with(r#"@charset "UTF-8";"#));
     }
 
+    // Second review: a byte-order mark (Sass adds one) must not end up in
+    // the first selector.
+    #[rstest]
+    #[case::bom_only("\u{feff}.a{color:red}", ".a{color:red}")]
+    #[case::bom_and_charset(
+        "\u{feff}@charset \"UTF-8\";.a{color:red}",
+        "@charset \"UTF-8\";.a{color:red}"
+    )]
+    fn prune_should_ignore_a_leading_byte_order_mark(#[case] css: &str, #[case] expected: &str) {
+        assert_eq!(prune_min(css, &["a"]), expected);
+    }
+
     #[test]
     fn prune_should_not_add_a_charset_to_ascii_output() {
         assert_eq!(prune_min(".a{color:red}", &["a"]), ".a{color:red}");
@@ -1522,6 +1594,28 @@ mod tests {
         );
     }
 
+    // Second review: Lightning CSS also warns about rules it keeps as
+    // written; those are not dropped and must not look like it.
+    #[rstest]
+    #[case::unknown_at_rule("@tailwind base;.x{color:red}")]
+    #[case::unknown_pseudo_class(".x:unknown-pseudo{color:red}")]
+    #[case::unknown_pseudo_inside_is(":is(:foo,.x){color:red}")]
+    #[case::stray_closing_brace(".x{color:red}}")]
+    fn prune_should_not_report_kept_rules_as_dropped(#[case] css: &str) {
+        let used = BTreeSet::from(["x"]);
+        let output = prune(css, &used, &PruneOptions::default());
+        let dropped = output.map(|output| output.warnings.iter().filter(|w| w.dropped).count());
+        assert_eq!(dropped.ok(), Some(0));
+    }
+
+    #[test]
+    fn prune_should_report_dropped_rules_as_dropped() {
+        let used = BTreeSet::from(["x", "y"]);
+        let output = prune(".x >>> .y{color:red}", &used, &PruneOptions::default());
+        let dropped = output.map(|output| output.warnings.iter().filter(|w| w.dropped).count());
+        assert_eq!(dropped.ok(), Some(1));
+    }
+
     #[test]
     fn prune_should_not_warn_about_valid_css() {
         let used = BTreeSet::from(["a"]);
@@ -1536,6 +1630,14 @@ mod tests {
     fn prune_should_keep_the_most_specific_parent_selector_of_nested_rules() {
         let css = ".a,#gone{& .c{color:red}}";
         assert_eq!(prune_min(css, &["a", "c"]), css);
+    }
+
+    // Found by fuzzing: if every nested rule goes, nothing needs the extra
+    // specificity, and keeping the selector anyway made pruning unstable.
+    #[test]
+    fn prune_should_not_keep_a_specific_parent_when_its_nested_rules_go() {
+        let css = ".a,#gone{color:red;& .unused{color:red}}";
+        assert_eq!(prune_min(css, &["a"]), ".a{color:red}");
     }
 
     #[test]
@@ -1558,6 +1660,21 @@ mod tests {
         let used = BTreeSet::from(["a"]);
         let err = prune(&css, &used, &PruneOptions::default()).err();
         assert!(err.is_some_and(|err| err.message().contains("nested more than")));
+    }
+
+    // Second review: an unquoted url() is one token, even with quotes or
+    // parentheses inside it, so it can neither hide nesting nor add to it.
+    #[test]
+    fn prune_should_count_nesting_after_an_unquoted_url_with_a_quote() {
+        let css = format!(".a{{b:url(x\")}}{}", ".a{".repeat(5000));
+        let err = prune(&css, &BTreeSet::from(["a"]), &PruneOptions::default()).err();
+        assert!(err.is_some_and(|err| err.message().contains("nested more than")));
+    }
+
+    #[test]
+    fn prune_should_not_count_parentheses_inside_unquoted_urls() {
+        let css = ".a{b:url(a(b)}".repeat(150);
+        assert!(prune(&css, &BTreeSet::from(["a"]), &PruneOptions::default()).is_ok());
     }
 
     #[test]

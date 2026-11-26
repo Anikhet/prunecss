@@ -137,13 +137,29 @@ struct ScanArgs {
     no_gitignore: bool,
 }
 
+/// Parsing recurses. The core caps nesting depth, and every thread that
+/// parses gets a stack far larger than that cap needs.
+const STACK_SIZE: usize = 64 << 20;
+
 fn main() -> ExitCode {
-    // Parsing recurses; bigger worker stacks give a wide margin below the
-    // core's nesting limit. If the pool is already set up, keep it.
+    // If the pool is already set up, keep it.
     let _ = rayon::ThreadPoolBuilder::new()
-        .stack_size(16 << 20)
+        .stack_size(STACK_SIZE)
         .build_global();
-    match run(Cli::parse()) {
+    let cli = Cli::parse();
+    // rayon runs a single task on the calling thread, so run the whole
+    // command on a thread with the same large stack.
+    let outcome = std::thread::Builder::new()
+        .stack_size(STACK_SIZE)
+        .spawn(move || run(cli))
+        .map_err(anyhow::Error::from)
+        .and_then(|handle| {
+            handle.join().map_err(|payload| {
+                anyhow::anyhow!("internal error: {}", panic_message(payload.as_ref()))
+            })
+        })
+        .and_then(|result| result);
+    match outcome {
         Ok(Outcome::Clean) => ExitCode::SUCCESS,
         Ok(Outcome::WouldRemove) => ExitCode::from(EXIT_WOULD_REMOVE),
         Err(err) => {
@@ -153,6 +169,15 @@ fn main() -> ExitCode {
             ExitCode::from(EXIT_ERROR)
         }
     }
+}
+
+/// The text of a panic, for the error message.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("the worker thread panicked")
 }
 
 fn run(cli: Cli) -> Result<Outcome> {

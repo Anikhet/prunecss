@@ -134,6 +134,11 @@ variable used from JavaScript is kept.
 - Rules the parser can't read (`.a >>> .b`, `*zoom: 1` and similar hacks)
   are skipped, as browsers skip them. prunecss prints a warning with the
   file, line and column for each, and `--check` counts them as changes.
+- A few values are normalised in ways that can matter: `translate3d(0,0,0)`
+  prints as `translate(0,0)` (dropping the "GPU layer" hack), colour alpha is
+  rounded to two decimals, and `(width > 600px)` prints as
+  `not (max-width: 600px)`. If you rely on these, safelist won't help; keep
+  those rules in a stylesheet you don't prune.
 - Fuzzing found that Lightning CSS's printer can merge tokens in unusual
   custom-property and unknown-property values that have no space between
   them: `--x:1+2px` prints as `--x:12px`, and `--y:a/**/b` as `--y:ab`.
