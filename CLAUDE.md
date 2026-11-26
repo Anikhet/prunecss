@@ -5,10 +5,24 @@ names they use, then remove CSS rules that can never match.
 
 ## Layout
 
-- `crates/prunecss-core` — library. All logic lives here. Errors use `thiserror`.
+- `crates/prunecss-core` — library, published to crates.io. All logic lives here.
 - `crates/prunecss-cli` — the `prunecss` binary. Thin wrapper; errors use `anyhow`.
 - Planned later: npm package via napi-rs, Vite/PostCSS plugins, then a language
   server + VS Code extension, all wrapping the same core.
+
+## Public API rules (prunecss-core)
+
+- Everything public is re-exported at the crate root (`prunecss_core::prune`);
+  modules stay private so each item has exactly one path.
+- Public structs and enums are `#[non_exhaustive]`. Options grow through
+  builder methods (`PruneOptions::default().minify(true)`), never struct
+  literals, so adding a field is not a breaking change.
+- Never expose Lightning CSS (or other dependency) types. It is a pinned
+  alpha; leaking its types would tie our semver to its releases.
+- Errors are a struct with a private `kind`, a message and an optional
+  1-based `SourceLocation`; convert dependency errors at the boundary.
+- Minimum supported Rust version is 1.88 (`rust-version`), checked in CI.
+  Raising it is a minor-version change and needs a changelog entry.
 
 ## Commands (all must pass before committing)
 
@@ -26,6 +40,11 @@ Benchmarks: always `--release`.
   data (`&str` slices of the input) where lifetimes allow. Use `Cow` when
   ownership is ambiguous.
 - No `unwrap()` / `expect()` / `panic!` outside tests. Return `Result` and use `?`.
+  Clippy enforces this (`clippy.toml` allows them inside tests).
+- The library never prints (`print_stdout`/`print_stderr` lints); only the CLI
+  does, via a crate-level `#[expect]`.
+- Never iterate a `HashSet`/`HashMap` where order reaches output
+  (`iter_over_hash_type`): CSS output and snapshots must be deterministic.
 - Prefer iterators over manual loops; avoid needless intermediate `.collect()`.
 - Prefer generics (static dispatch); use `dyn Trait` only for heterogeneous
   collections, boxed at API boundaries.

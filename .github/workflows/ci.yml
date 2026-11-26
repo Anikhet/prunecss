@@ -30,3 +30,13 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Coverage
         run: cargo llvm-cov --locked --fail-under-lines 80
+
+  msrv:
+    name: Minimum supported Rust (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - name: Build with the MSRV
+        run: cargo check --workspace --all-targets --locked

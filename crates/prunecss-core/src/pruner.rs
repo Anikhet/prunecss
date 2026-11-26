@@ -37,8 +37,17 @@ impl<S: BuildHasher> UsedNames for HashSet<&str, S> {
     }
 }
 
-/// How the pruned stylesheet is printed.
-#[derive(Debug, Clone, Copy, Default)]
+/// Options for [`prune`].
+///
+/// Construct with [`PruneOptions::default`] and the builder methods, so new
+/// options can be added without breaking your code:
+///
+/// ```
+/// let options = prunecss_core::PruneOptions::default().minify(true);
+/// assert!(options.minify);
+/// ```
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct PruneOptions {
     /// Print without whitespace.
     ///
@@ -48,8 +57,18 @@ pub struct PruneOptions {
     pub minify: bool,
 }
 
+impl PruneOptions {
+    /// Sets [`PruneOptions::minify`].
+    #[must_use]
+    pub fn minify(mut self, minify: bool) -> Self {
+        self.minify = minify;
+        self
+    }
+}
+
 /// The result of pruning one stylesheet.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PruneOutput {
     /// The stylesheet with unused rules removed.
     pub css: String,
@@ -58,38 +77,113 @@ pub struct PruneOutput {
     pub removed_selectors: usize,
 }
 
-/// Errors returned by [`prune`].
-#[derive(Debug, thiserror::Error)]
-pub enum PruneError {
-    /// The stylesheet could not be parsed at all.
-    #[error("could not parse CSS: {0}")]
-    Parse(String),
+/// What went wrong in [`prune`]. See [`PruneError::kind`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PruneErrorKind {
+    /// The stylesheet could not be parsed, even with error recovery.
+    Parse,
     /// The pruned stylesheet could not be printed.
-    #[error("could not print CSS: {0}")]
-    Print(String),
+    Print,
 }
+
+/// A position in the input stylesheet. Both numbers start at 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SourceLocation {
+    /// Line number, starting at 1.
+    pub line: u32,
+    /// Column number, starting at 1.
+    pub column: u32,
+}
+
+/// An error returned by [`prune`].
+///
+/// It carries the input position when one is known, so callers can point at
+/// the problem. No Lightning CSS types appear here: that crate is still an
+/// alpha, and its types would tie our public API to its releases.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PruneError {
+    kind: PruneErrorKind,
+    message: String,
+    location: Option<SourceLocation>,
+}
+
+impl PruneError {
+    fn from_lightningcss<T: std::fmt::Display>(
+        kind: PruneErrorKind,
+        err: &lightningcss::error::Error<T>,
+    ) -> Self {
+        Self {
+            kind,
+            message: err.kind.to_string(),
+            location: err.loc.as_ref().map(|loc| SourceLocation {
+                // Lightning CSS counts lines from 0 and columns from 1.
+                line: loc.line.saturating_add(1),
+                column: loc.column,
+            }),
+        }
+    }
+
+    /// What kind of failure this was.
+    #[must_use]
+    pub fn kind(&self) -> PruneErrorKind {
+        self.kind
+    }
+
+    /// A description of the problem, without the location.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Where in the input stylesheet the problem is, if known.
+    #[must_use]
+    pub fn location(&self) -> Option<SourceLocation> {
+        self.location
+    }
+}
+
+impl std::fmt::Display for PruneError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action = match self.kind {
+            PruneErrorKind::Parse => "could not parse CSS",
+            PruneErrorKind::Print => "could not print CSS",
+        };
+        match self.location {
+            Some(loc) => write!(
+                f,
+                "{action} at line {}, column {}: {}",
+                loc.line, loc.column, self.message
+            ),
+            None => write!(f, "{action}: {}", self.message),
+        }
+    }
+}
+
+impl std::error::Error for PruneError {}
 
 /// Removes every rule and selector in `css` that can never match `used`.
 ///
 /// # Errors
 ///
-/// Returns [`PruneError::Parse`] if the stylesheet is too broken to recover,
-/// and [`PruneError::Print`] if printing fails.
+/// Returns a [`PruneErrorKind::Parse`] error if the stylesheet is too broken
+/// to recover, and a [`PruneErrorKind::Print`] error if printing fails.
 ///
 /// ```
 /// use std::collections::BTreeSet;
-/// use prunecss_core::pruner::{prune, PruneOptions};
+/// use prunecss_core::{prune, PruneOptions};
 ///
 /// let used = BTreeSet::from(["btn"]);
 /// let css = ".btn { color: red } .unused { color: blue }";
-/// let output = prune(css, &used, PruneOptions { minify: true })?;
+/// let output = prune(css, &used, &PruneOptions::default().minify(true))?;
 /// assert_eq!(output.css, ".btn{color:red}");
-/// # Ok::<(), prunecss_core::pruner::PruneError>(())
+/// # Ok::<(), prunecss_core::PruneError>(())
 /// ```
 pub fn prune(
     css: &str,
     used: &impl UsedNames,
-    options: PruneOptions,
+    options: &PruneOptions,
 ) -> Result<PruneOutput, PruneError> {
     let parser_options = ParserOptions {
         // Skip a broken rule with a warning instead of failing the whole
@@ -97,8 +191,8 @@ pub fn prune(
         error_recovery: true,
         ..ParserOptions::default()
     };
-    let mut sheet =
-        StyleSheet::parse(css, parser_options).map_err(|err| PruneError::Parse(err.to_string()))?;
+    let mut sheet = StyleSheet::parse(css, parser_options)
+        .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Parse, &err))?;
 
     let mut removed_selectors = 0;
     prune_rules(&mut sheet.rules, used, &mut removed_selectors);
@@ -118,7 +212,7 @@ pub fn prune(
     };
     let printed = sheet
         .to_css(printer_options)
-        .map_err(|err| PruneError::Print(err.to_string()))?;
+        .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Print, &err))?;
 
     Ok(PruneOutput {
         css: printed.code,
@@ -231,7 +325,7 @@ mod tests {
 
     fn prune_min(css: &str, used: &[&str]) -> String {
         let used: BTreeSet<&str> = used.iter().copied().collect();
-        match prune(css, &used, PruneOptions { minify: true }) {
+        match prune(css, &used, &PruneOptions::default().minify(true)) {
             Ok(output) => output.css,
             Err(err) => panic!("prune failed: {err}"),
         }
@@ -392,7 +486,7 @@ mod tests {
         let output = prune(
             ".a{color:red}.b{color:red}",
             &used,
-            PruneOptions { minify: true },
+            &PruneOptions::default().minify(true),
         )
         .map(|output| output.css)
         .ok();
@@ -403,7 +497,7 @@ mod tests {
     fn prune_should_count_nested_selectors_removed_with_their_parent() {
         let used = BTreeSet::from(["a"]);
         let css = ".b{color:red;&:hover{color:red}& .c,& .d{color:red}@media print{color:red}}";
-        let removed = prune(css, &used, PruneOptions::default())
+        let removed = prune(css, &used, &PruneOptions::default())
             .map(|output| output.removed_selectors)
             .ok();
         assert_eq!(removed, Some(4));
@@ -426,7 +520,7 @@ mod tests {
     fn prune_should_count_legacy_nest_selectors_removed_with_their_parent() {
         let used = BTreeSet::from(["a"]);
         let css = ".b{color:red;@nest .x &,.y &{color:red}}";
-        let removed = prune(css, &used, PruneOptions::default())
+        let removed = prune(css, &used, &PruneOptions::default())
             .map(|output| output.removed_selectors)
             .ok();
         assert_eq!(removed, Some(3));
@@ -436,7 +530,7 @@ mod tests {
     fn prune_should_count_removed_selectors_individually() {
         let used = BTreeSet::from(["a"]);
         let css = ".a,.b,.c{color:red}.d{color:blue}";
-        let removed = prune(css, &used, PruneOptions::default())
+        let removed = prune(css, &used, &PruneOptions::default())
             .map(|output| output.removed_selectors)
             .ok();
         assert_eq!(removed, Some(3));
@@ -463,10 +557,65 @@ mod tests {
     fn prune_should_print_readable_css_when_not_minifying() {
         let used = BTreeSet::from(["a"]);
         let css = ".a{color:red}";
-        let output = prune(css, &used, PruneOptions::default())
+        let output = prune(css, &used, &PruneOptions::default())
             .map(|o| o.css)
             .ok();
         assert_eq!(output.as_deref(), Some(".a {\n  color: red;\n}\n"));
+    }
+
+    fn lightningcss_error(loc: Option<(u32, u32)>) -> lightningcss::error::Error<&'static str> {
+        lightningcss::error::Error {
+            kind: "unexpected token",
+            loc: loc.map(|(line, column)| lightningcss::error::ErrorLocation {
+                filename: String::new(),
+                line,
+                column,
+            }),
+        }
+    }
+
+    #[test]
+    fn prune_error_should_convert_lines_to_start_at_one() {
+        let err =
+            PruneError::from_lightningcss(PruneErrorKind::Parse, &lightningcss_error(Some((0, 7))));
+        assert_eq!(err.location(), Some(SourceLocation { line: 1, column: 7 }));
+    }
+
+    #[test]
+    fn prune_error_should_display_its_location() {
+        let err =
+            PruneError::from_lightningcss(PruneErrorKind::Parse, &lightningcss_error(Some((2, 4))));
+        assert_eq!(
+            err.to_string(),
+            "could not parse CSS at line 3, column 4: unexpected token"
+        );
+    }
+
+    #[test]
+    fn prune_error_should_display_without_a_location() {
+        let err = PruneError::from_lightningcss(PruneErrorKind::Print, &lightningcss_error(None));
+        assert_eq!(err.to_string(), "could not print CSS: unexpected token");
+    }
+
+    #[test]
+    fn prune_error_should_expose_kind_and_message() {
+        let err = PruneError::from_lightningcss(PruneErrorKind::Print, &lightningcss_error(None));
+        assert_eq!(
+            (err.kind(), err.message()),
+            (PruneErrorKind::Print, "unexpected token")
+        );
+    }
+
+    // With error recovery on, broken input is skipped the way browsers skip
+    // it instead of failing the whole file.
+    #[rstest]
+    #[case::unclosed_block(".a{color:red", ".a{color:red}")]
+    #[case::stray_brace(".a{color:red}}", ".a{color:red}")]
+    #[case::incomplete_at_rule("@media (", "")]
+    #[case::import_after_rules(".a{color:red}@import url(x.css);", ".a{color:red}")]
+    #[case::nul_byte("\u{0}", "")]
+    fn prune_should_recover_from_broken_stylesheets(#[case] css: &str, #[case] expected: &str) {
+        assert_eq!(prune_min(css, &["a"]), expected);
     }
 
     mod properties {
@@ -492,7 +641,7 @@ mod tests {
             #[test]
             fn prune_never_panics_on_arbitrary_text(css in ".{0,200}") {
                 let used = BTreeSet::from(["a"]);
-                let _ = prune(&css, &used, PruneOptions::default());
+                let _ = prune(&css, &used, &PruneOptions::default());
             }
 
             #[test]

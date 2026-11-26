@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 /// Names are borrowed from `source`, so no strings are copied.
 ///
 /// ```
-/// use prunecss_core::scanner::extract_classes;
+/// use prunecss_core::extract_classes;
 ///
 /// let classes = extract_classes(r#"<div class="card card--big">"#);
 /// assert_eq!(classes.into_iter().collect::<Vec<_>>(), ["card", "card--big"]);

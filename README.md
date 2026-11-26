@@ -67,6 +67,10 @@ It does:
 - [ ] npm package, Vite and PostCSS plugins
 - [ ] Language server and VS Code extension
 
+## Requirements
+
+Rust 1.88 or newer to build from source.
+
 ## License
 
 MIT or Apache-2.0, at your option.

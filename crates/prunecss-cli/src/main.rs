@@ -1,13 +1,20 @@
 //! `prunecss` command-line tool.
 
+// The workspace forbids printing so the library never does; printing is this
+// binary's whole job.
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the CLI prints its results"
+)]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use prunecss_core::pruner::{self, PruneOptions};
-use prunecss_core::scanner::extract_classes;
+use prunecss_core::{PruneOptions, extract_classes};
 
 /// Remove unused CSS, fast.
 #[derive(Parser)]
@@ -104,7 +111,8 @@ fn prune(
     let sources = read_all(content)?;
     let used = used_classes(&sources);
 
-    let pruned = pruner::prune(&css, &used, PruneOptions { minify })
+    let options = PruneOptions::default().minify(minify);
+    let pruned = prunecss_core::prune(&css, &used, &options)
         .with_context(|| format!("pruning {}", css_path.display()))?;
 
     match output {

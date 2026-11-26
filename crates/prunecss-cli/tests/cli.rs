@@ -1,5 +1,7 @@
 //! End-to-end tests that run the real `prunecss` binary.
 
+#![expect(clippy::panic, reason = "test helpers should fail loudly")]
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
