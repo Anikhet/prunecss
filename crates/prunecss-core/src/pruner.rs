@@ -7,6 +7,7 @@
 //! removal. That keeps more CSS than strictly needed, but never deletes CSS a
 //! page uses.
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashSet};
 use std::hash::BuildHasher;
 
@@ -125,6 +126,10 @@ pub struct PruneOutput {
     /// How many selectors were removed, counting each selector in a list
     /// such as `.a, .b` separately.
     pub removed_selectors: usize,
+    /// How many kept selectors require at least one class or id. Zero while
+    /// `removed_selectors` is not usually means the content was not the
+    /// right content.
+    pub kept_named_selectors: usize,
     /// How many `@keyframes` rules were removed.
     pub removed_keyframes: usize,
     /// How many `@font-face` rules were removed.
@@ -253,6 +258,7 @@ pub fn prune(
     let matcher = Matcher {
         used,
         safelist: &options.safelist,
+        kept_named: Cell::new(0),
     };
     let mut removed_selectors = 0;
     prune_rules(&mut sheet.rules, &matcher, &mut removed_selectors);
@@ -293,6 +299,7 @@ pub fn prune(
     Ok(PruneOutput {
         css: printed.code,
         removed_selectors,
+        kept_named_selectors: matcher.kept_named.get(),
         removed_keyframes: tracked.keyframes,
         removed_font_faces: tracked.font_faces,
         removed_variables: tracked.variables,
@@ -440,6 +447,8 @@ fn repair_selector(selector: &mut Selector<'_>) {
 struct Matcher<'a, U> {
     used: &'a U,
     safelist: &'a Safelist,
+    /// Kept selectors that require a class or id, for [`PruneOutput`].
+    kept_named: Cell<usize>,
 }
 
 impl<U: UsedNames> Matcher<'_, U> {
@@ -499,6 +508,13 @@ fn keep_style_rule<R, U: UsedNames>(
             || selector_can_match(selector, matcher)
     });
     *removed += before - style.selectors.0.len();
+    let named = style
+        .selectors
+        .0
+        .iter()
+        .filter(|selector| names_something(selector))
+        .count();
+    matcher.kept_named.set(matcher.kept_named.get() + named);
 
     if style.selectors.0.is_empty() {
         // Nested rules are relative to this one, so they go with it.
@@ -509,6 +525,14 @@ fn keep_style_rule<R, U: UsedNames>(
         prune_rules(&mut style.rules, matcher, removed);
     }
     true
+}
+
+/// Whether the selector itself requires a class or id (not counting names
+/// inside `:not()` and similar).
+fn names_something(selector: &Selector<'_>) -> bool {
+    selector
+        .iter_raw_match_order()
+        .any(|component| matches!(component, Component::Class(_) | Component::ID(_)))
 }
 
 fn selector_can_match<U: UsedNames>(selector: &Selector<'_>, matcher: &Matcher<'_, U>) -> bool {
@@ -771,6 +795,16 @@ mod tests {
             .map(|output| output.removed_selectors)
             .ok();
         assert_eq!(removed, Some(3));
+    }
+
+    #[test]
+    fn prune_should_count_kept_selectors_that_name_a_class_or_id() {
+        let used = BTreeSet::from(["a"]);
+        let css = ".a,p,.b{color:red}#x .a,[hidden]{color:red}";
+        let kept = prune(css, &used, &PruneOptions::default())
+            .map(|output| output.kept_named_selectors)
+            .ok();
+        assert_eq!(kept, Some(1));
     }
 
     #[test]

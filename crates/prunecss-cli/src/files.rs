@@ -42,10 +42,16 @@ pub(crate) fn expand(
                 .with_context(|| format!("invalid glob `{pattern}`"))?
                 .compile_matcher();
             let root = base.join(literal_prefix(pattern));
+            // An absolute pattern is matched against absolute paths.
+            let match_base = if Path::new(pattern).is_absolute() {
+                Path::new("")
+            } else {
+                base
+            };
             walk(
                 &root,
                 Some(&glob),
-                base,
+                match_base,
                 respect_ignore_files,
                 &mut expanded.files,
             );
@@ -66,10 +72,31 @@ fn has_glob_syntax(pattern: &str) -> bool {
 /// The directories before the first glob character: `src/**/*.tsx` is
 /// walked from `src`, not from the project root.
 fn literal_prefix(pattern: &str) -> PathBuf {
-    pattern
+    // Joining the segments with `/` keeps a leading root: `/srv/x/*.html`
+    // is walked from `/srv/x`, not from `srv/x` under the base.
+    let literal: Vec<&str> = pattern
         .split('/')
         .take_while(|segment| !has_glob_syntax(segment))
-        .collect()
+        .collect();
+    PathBuf::from(literal.join("/"))
+}
+
+/// Resolves `.` and `..` without touching the filesystem, so
+/// `site/../styles/a.css` and `styles/a.css` compare equal.
+pub(crate) fn normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push("..");
+                }
+            }
+            other => normalized.push(other),
+        }
+    }
+    normalized
 }
 
 /// Adds every file under `root` (matching `glob`, relative to `base`).
@@ -226,6 +253,25 @@ mod tests {
         let dir = project();
         let err = expand(&["src/**/*.{html".to_owned()], dir.path(), true).unwrap_err();
         assert!(format!("{err:#}").contains("invalid glob"), "{err:#}");
+    }
+
+    #[test]
+    fn expand_should_accept_absolute_globs() {
+        let dir = project();
+        let pattern = format!(
+            "{}/src/*.html",
+            dir.path().to_string_lossy().replace('\\', "/")
+        );
+        let expanded = expand(&[pattern], Path::new("/somewhere/else"), true).unwrap();
+        assert_eq!(expanded.files, [dir.path().join("src/index.html")]);
+    }
+
+    #[test]
+    fn normalize_should_resolve_dots_lexically() {
+        assert_eq!(
+            normalize(Path::new("/a/site/../styles/./x.css")),
+            Path::new("/a/styles/x.css")
+        );
     }
 
     #[test]

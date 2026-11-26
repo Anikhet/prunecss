@@ -241,9 +241,16 @@ fn prune_settings(args: PruneArgs, loaded: &Loaded) -> Result<PruneSettings> {
         .font_face(args.font_face || config.font_face)
         .variables(args.variables || config.variables);
 
-    let output = args
-        .output
-        .or_else(|| config.output.as_ref().map(|output| loaded.dir.join(output)));
+    // `-` means standard output, wherever it comes from.
+    let output = args.output.or_else(|| {
+        config.output.as_ref().map(|output| {
+            if output == "-" {
+                PathBuf::from("-")
+            } else {
+                loaded.dir.join(output)
+            }
+        })
+    });
 
     Ok(PruneSettings {
         css: choose(args.css, &config.css, loaded),

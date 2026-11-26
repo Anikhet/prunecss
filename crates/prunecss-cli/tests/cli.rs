@@ -260,8 +260,7 @@ fn prune_should_read_settings_from_prunecss_json() {
     )
     .unwrap();
     let output = run_in(dir.path(), &["prune"], None);
-    let theme =
-        std::fs::read_to_string(dir.path().join("out/styles/theme.css")).unwrap_or_default();
+    let theme = std::fs::read_to_string(dir.path().join("out/theme.css")).unwrap_or_default();
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(theme, ".used{color:#00f}.gone{color:#00f}");
 }
@@ -446,8 +445,9 @@ fn prune_should_mirror_paths_into_the_output_directory() {
         None,
     );
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(dir.path().join("dist/styles/app.css").is_file());
-    assert!(dir.path().join("dist/styles/theme.css").is_file());
+    // Mirrored from the inputs' common parent, `styles/`.
+    assert!(dir.path().join("dist/app.css").is_file());
+    assert!(dir.path().join("dist/theme.css").is_file());
 }
 
 #[test]
@@ -505,4 +505,183 @@ fn completions_should_print_a_script() {
 fn invalid_arguments_should_exit_with_two() {
     let output = prunecss(&["prune", "--no-such-flag"]);
     assert_eq!(output.status.code(), Some(2));
+}
+
+// ---- Output safety (found in the pre-release review) ---------------------
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+
+#[test]
+fn output_directory_should_never_be_escaped_by_parent_paths() {
+    let dir = project(&[
+        ("site/index.html", r#"<p class="a b">"#),
+        ("styles/a.css", ".a{color:red}.zz{color:red}"),
+        ("styles/b.css", ".b{color:red}"),
+    ]);
+    let site = dir.path().join("site");
+    let output = run_in(
+        &site,
+        &[
+            "prune",
+            "../styles/a.css",
+            "../styles/b.css",
+            "-c",
+            "index.html",
+            "-o",
+            "../pruned",
+            "--minify",
+        ],
+        None,
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        read(&dir.path().join("styles/a.css")),
+        ".a{color:red}.zz{color:red}",
+        "input was overwritten"
+    );
+    assert_eq!(read(&dir.path().join("pruned/a.css")), ".a{color:red}");
+}
+
+#[test]
+fn output_should_refuse_two_inputs_writing_the_same_file() {
+    let dir = project(&[
+        ("i.html", r#"<p class="a">"#),
+        ("one/app.css", ".a{color:red}"),
+        ("two/app.css", ".a{color:blue}"),
+    ]);
+    let one = dir.path().join("one/app.css");
+    let two = dir.path().join("two/app.css");
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            path_arg(&one),
+            path_arg(&two),
+            "-c",
+            "i.html",
+            "-o",
+            "out",
+        ],
+        None,
+    );
+    // Mirrored from their common parent, the two files get distinct paths.
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        dir.path().join("out/one/app.css").is_file()
+            && dir.path().join("out/two/app.css").is_file()
+    );
+}
+
+#[test]
+fn output_should_refuse_to_overwrite_an_input() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "styles/app.css",
+            "-c",
+            "src",
+            "-o",
+            "styles/app.css",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("refusing to overwrite"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(read(&dir.path().join("styles/app.css")).contains(".unused"));
+}
+
+#[test]
+fn output_should_refuse_to_overwrite_an_input_through_a_directory() {
+    let dir = sample_project();
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/*.css", "-c", "src", "-o", "."],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(read(&dir.path().join("styles/app.css")).contains(".unused"));
+}
+
+#[test]
+fn output_directory_should_be_excluded_from_stylesheet_globs() {
+    let dir = sample_project();
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        r#"{ "css": ["**/*.css"], "content": ["src"], "output": "pruned/" }"#,
+    )
+    .unwrap();
+    let first = run_in(dir.path(), &["prune"], None);
+    let second = run_in(dir.path(), &["prune"], None);
+    assert!(
+        first.status.success() && second.status.success(),
+        "{}",
+        stderr(&second)
+    );
+    assert!(
+        !dir.path().join("pruned/pruned").exists(),
+        "previous output was pruned again"
+    );
+}
+
+#[test]
+fn config_output_dash_should_mean_standard_output() {
+    let dir = sample_project();
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        r#"{ "css": ["styles/app.css"], "content": ["src"], "output": "-", "minify": true }"#,
+    )
+    .unwrap();
+    let output = run_in(dir.path(), &["prune"], None);
+    assert_eq!(stdout(&output), ".used{color:red}.also-used{color:red}");
+    assert!(!dir.path().join("-").exists());
+}
+
+#[test]
+fn prune_should_refuse_content_without_any_names() {
+    let dir = project(&[("empty.html", ""), ("s.css", ".a{color:red}")]);
+    let output = run_in(dir.path(), &["prune", "s.css", "-c", "empty.html"], None);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        stderr(&output).contains("no class or id names"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn prune_should_warn_when_no_class_of_a_stylesheet_is_used() {
+    let dir = project(&[
+        ("i.html", "<p>hello</p>"),
+        ("s.css", ".a{color:red}p{color:red}"),
+    ]);
+    let output = run_in(dir.path(), &["prune", "s.css", "-c", "i.html"], None);
+    assert!(output.status.success());
+    assert!(
+        stderr(&output).contains("warning: none of the classes or ids in s.css"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn prune_should_accept_absolute_content_globs() {
+    let dir = sample_project();
+    let glob = format!(
+        "{}/src/**/*.html",
+        dir.path().to_string_lossy().replace('\\', "/")
+    );
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/app.css", "-c", &glob, "--minify"],
+        None,
+    );
+    assert_eq!(stdout(&output), ".used{color:red}");
 }

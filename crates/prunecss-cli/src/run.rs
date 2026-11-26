@@ -93,11 +93,12 @@ impl Input {
 
 pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
     let start = Instant::now();
-    let inputs = css_inputs(settings)?;
     let output = settings
         .output
         .as_deref()
-        .filter(|path| *path != Path::new("-"));
+        .filter(|path| *path != Path::new("-"))
+        .map(absolute);
+    let inputs = css_inputs(settings, output.as_deref())?;
     let to_stdout = !settings.check && output.is_none();
     if to_stdout && inputs.len() > 1 {
         bail!(
@@ -108,29 +109,46 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
     if to_stdout && settings.json {
         bail!("--json needs the CSS to go elsewhere: add --output or --check");
     }
+    // Decide every destination before reading or writing anything, so a bad
+    // plan (a collision, an input about to be overwritten) changes nothing.
+    let destinations = if settings.check {
+        vec![None; inputs.len()]
+    } else {
+        plan_outputs(&inputs, output.as_deref(), settings.output.as_deref())?
+    };
 
     let content_files = content_files(&settings.content, settings.gitignore)?;
     let sources = read_all(&content_files)?;
     let used = used_names(&sources);
+    if used.is_empty() {
+        bail!(
+            "the content files contain no class or id names, so every class would look \
+             unused; refusing to prune. Check the --content patterns"
+        );
+    }
 
-    let results: Vec<(Input, String, PruneOutput)> = inputs
-        .into_par_iter()
+    let results: Vec<(String, PruneOutput)> = inputs
+        .par_iter()
         .map(|input| {
-            let css = read_input(&input)?;
+            let css = read_input(input)?;
             let pruned = prunecss_core::prune(&css, &used, &settings.options)
                 .with_context(|| format!("pruning {}", input.label()))?;
-            Ok((input, css, pruned))
+            Ok((css, pruned))
         })
         .collect::<Result<_>>()?;
 
-    let single = results.len() == 1;
     let mut reports = Vec::with_capacity(results.len());
-    for (input, css, pruned) in &results {
-        let destination = if settings.check {
-            None
-        } else {
-            write_output(input, &pruned.css, output, single, &settings.css.base)?
-        };
+    for ((input, destination), (css, pruned)) in inputs.iter().zip(&destinations).zip(&results) {
+        if pruned.removed_selectors > 0 && pruned.kept_named_selectors == 0 {
+            eprintln!(
+                "warning: none of the classes or ids in {} are used by the content files; \
+                 check the --content patterns",
+                input.label()
+            );
+        }
+        if !settings.check {
+            write_output(destination.as_deref(), &pruned.css)?;
+        }
         reports.push(FileReport {
             path: input.label(),
             output: destination.as_deref().map(display),
@@ -180,7 +198,7 @@ pub(crate) fn scan(content: &Patterns, css: Option<&Path>, gitignore: bool) -> R
     Ok(())
 }
 
-fn css_inputs(settings: &PruneSettings) -> Result<Vec<Input>> {
+fn css_inputs(settings: &PruneSettings, output: Option<&Path>) -> Result<Vec<Input>> {
     let patterns = &settings.css.patterns;
     if patterns.is_empty() {
         bail!("no stylesheet given: pass one, or set `css` in prunecss.json");
@@ -195,7 +213,123 @@ fn css_inputs(settings: &PruneSettings) -> Result<Vec<Input>> {
     if let Some(pattern) = expanded.unmatched.first() {
         bail!("no stylesheet matched `{pattern}`");
     }
-    Ok(expanded.files.into_iter().map(Input::File).collect())
+    let mut files = expanded.files;
+    // Leave earlier results alone: with `css: ["**/*.css"]` and an output
+    // directory inside the project, the next run would prune its own output.
+    if let Some(output) =
+        output.filter(|output| is_directory_like(output, settings.output.as_deref()))
+    {
+        let output = files::normalize(output);
+        let before = files.len();
+        files.retain(|file| !files::normalize(file).starts_with(&output));
+        if files.is_empty() && before > 0 {
+            bail!(
+                "every matched stylesheet is inside the output directory {}",
+                display(&output)
+            );
+        }
+    }
+    Ok(files.into_iter().map(Input::File).collect())
+}
+
+/// `--output` names a directory if it already is one, or ends with `/`.
+fn is_directory_like(output: &Path, as_given: Option<&Path>) -> bool {
+    output.is_dir()
+        || as_given.is_some_and(|given| given.as_os_str().to_string_lossy().ends_with(['/', '\\']))
+}
+
+fn absolute(path: &Path) -> PathBuf {
+    std::env::current_dir().map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
+}
+
+/// Works out where each result goes, refusing plans that would lose data.
+///
+/// In directory mode, paths are mirrored from the inputs' deepest common
+/// parent (after resolving `..`), so a destination can never leave the
+/// output directory.
+fn plan_outputs(
+    inputs: &[Input],
+    output: Option<&Path>,
+    as_given: Option<&Path>,
+) -> Result<Vec<Option<PathBuf>>> {
+    let Some(output) = output else {
+        return Ok(vec![None; inputs.len()]);
+    };
+    let output = files::normalize(output);
+    let input_paths: Vec<PathBuf> = inputs
+        .iter()
+        .filter_map(|input| match input {
+            Input::File(path) => Some(files::normalize(path)),
+            Input::Stdin => None,
+        })
+        .collect();
+
+    let directory = inputs.len() > 1 || is_directory_like(&output, as_given);
+    let destinations: Vec<PathBuf> = if directory {
+        let common = common_parent(&input_paths);
+        inputs
+            .iter()
+            .map(|input| match input {
+                Input::File(path) => {
+                    let path = files::normalize(path);
+                    let relative = common
+                        .as_deref()
+                        .and_then(|common| path.strip_prefix(common).ok())
+                        .map_or_else(
+                            || PathBuf::from(path.file_name().unwrap_or_default()),
+                            Path::to_path_buf,
+                        );
+                    output.join(relative)
+                }
+                Input::Stdin => output.join("stdin.css"),
+            })
+            .collect()
+    } else {
+        vec![output]
+    };
+
+    let mut seen = std::collections::BTreeSet::new();
+    for destination in &destinations {
+        if !seen.insert(destination) {
+            bail!(
+                "two stylesheets would both be written to {}",
+                display(destination)
+            );
+        }
+        if input_paths
+            .iter()
+            .any(|input| same_file(input, destination))
+        {
+            bail!(
+                "refusing to overwrite the input {}; choose a different --output",
+                display(destination)
+            );
+        }
+    }
+    Ok(destinations.into_iter().map(Some).collect())
+}
+
+/// The deepest directory containing every path, if they share one.
+fn common_parent(paths: &[PathBuf]) -> Option<PathBuf> {
+    let mut common = paths.first()?.parent()?.to_path_buf();
+    for path in &paths[1..] {
+        while !path.starts_with(&common) {
+            if !common.pop() {
+                return None;
+            }
+        }
+    }
+    Some(common)
+}
+
+/// Lexically equal, or the same file on disk (symlinks, case-insensitive
+/// file systems).
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b
+        || matches!(
+            (a.canonicalize(), b.canonicalize()),
+            (Ok(a), Ok(b)) if a == b
+        )
 }
 
 /// Expands the content patterns, refusing to continue without any files:
@@ -264,40 +398,16 @@ fn used_names(sources: &[String]) -> FxHashSet<&str> {
         })
 }
 
-/// Writes one result and returns where it went (`None` for stdout).
-fn write_output(
-    input: &Input,
-    css: &str,
-    output: Option<&Path>,
-    single: bool,
-    css_base: &Path,
-) -> Result<Option<PathBuf>> {
-    let Some(output) = output else {
+/// Writes one result to its planned destination, or standard output.
+fn write_output(destination: Option<&Path>, css: &str) -> Result<()> {
+    let Some(destination) = destination else {
         print!("{css}");
-        return Ok(None);
-    };
-    let is_dir =
-        !single || output.is_dir() || output.as_os_str().to_string_lossy().ends_with(['/', '\\']);
-    let destination = if is_dir {
-        let relative = match input {
-            Input::File(path) => path
-                .strip_prefix(css_base)
-                .ok()
-                .map(Path::to_path_buf)
-                .or_else(|| path.file_name().map(PathBuf::from))
-                .unwrap_or_else(|| PathBuf::from("stdin.css")),
-            Input::Stdin => PathBuf::from("stdin.css"),
-        };
-        output.join(relative)
-    } else {
-        output.to_path_buf()
+        return Ok(());
     };
     if let Some(parent) = destination.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).with_context(|| format!("creating {}", display(parent)))?;
     }
-    std::fs::write(&destination, css)
-        .with_context(|| format!("writing {}", display(&destination)))?;
-    Ok(Some(destination))
+    std::fs::write(destination, css).with_context(|| format!("writing {}", display(destination)))
 }
 
 fn print_summary(report: &Report, check: bool) {
@@ -324,7 +434,14 @@ fn print_summary(report: &Report, check: bool) {
     );
 }
 
-/// Paths are shown with `/` on every platform, so output and snapshots match.
+/// Paths are shown relative to the current directory where possible, with
+/// `/` on every platform, so messages are short and snapshots match.
 fn display(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    let cwd = std::env::current_dir().ok();
+    let shown = cwd
+        .as_deref()
+        .and_then(|cwd| path.strip_prefix(cwd).ok())
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .unwrap_or(path);
+    shown.to_string_lossy().replace('\\', "/")
 }
