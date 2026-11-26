@@ -55,5 +55,35 @@ not a raw commit log. See [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages).
   a 1-based source location. Public types are `#[non_exhaustive]`; no
   Lightning CSS types appear in the API.
 - Minimum supported Rust version: 1.88.
+- **Warnings** for rules the parser can't read (`ParseWarning`, printed as
+  `warning: file:line:col: …`, listed in `--json`, counted by `--check`).
+- **Fuzzing** (`fuzz/`, cargo-fuzz) and property tests for monotonicity,
+  no invented rules and safelist equivalence.
+- Benchmarks against PurgeCSS 9.1.0 (`make -C bench`) and criterion
+  micro-benchmarks.
+
+### Fixed (found before the first release)
+
+- Output: `-o DIR` with inputs reached through `..` could overwrite the
+  inputs; two inputs could collide on one output path; an output directory
+  inside the stylesheet globs was re-pruned on every run; `"output": "-"`
+  wrote a file named `-`.
+- Refuses to prune when the content yields no names at all (e.g. empty
+  files), and warns when none of a stylesheet's classes are used.
+- False removals: quotes in Tailwind arbitrary values
+  (`bg-[url('…')]`, `content-['']`); HTML entities (`[&amp;_p]:mt-2`,
+  `class=&quot;x&quot;`); `querySelector(".a+.b")`; JS escapes
+  (`"card\nbtn"`); absolute globs; `/regex/i` safelist flags.
+- Opt-in tracking now counts readers in `@container style()` queries,
+  `@page`, `@position-try`, `@font-feature-values` and unknown at-rules,
+  and matches quoted/escaped keyframe names and case-insensitive font
+  families.
+- Printing: legacy `:-moz-placeholder`/`:-ms-input-placeholder` no longer
+  become unsupported `-placeholder-shown` forms; colours stay `rgba()`
+  instead of 8-digit hex; `@charset "UTF-8"` is added when needed;
+  nesting parents keep the selector that sets `&`'s specificity.
+- Deeply nested input is refused with an error instead of overflowing the
+  stack.
+- The scanner is about 5× faster (hash-set de-duplication).
 
 [Unreleased]: https://github.com/Anikhet/prunecss/commits/main

@@ -21,6 +21,12 @@ names they use, then remove CSS rules that can never match.
   alpha; leaking its types would tie our semver to its releases.
 - Errors are a struct with a private `kind`, a message and an optional
   1-based `SourceLocation`; convert dependency errors at the boundary.
+- `extract_classes` returns `BTreeSet<Cow<str>>`: names are borrowed from the
+  input except the few that only exist after decoding HTML entities.
+- Output fidelity rules live in `prune`: printer targets old browsers with
+  `Features::Nesting` excluded, legacy placeholder pseudo-classes are
+  repaired, `@charset` is added when needed, nesting depth is capped
+  (`MAX_NESTING`). Keep them when touching printing.
 - Minimum supported Rust version is 1.88 (`rust-version`), checked in CI.
   Raising it is a minor-version change and needs a changelog entry.
 

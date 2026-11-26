@@ -170,7 +170,9 @@ their spare time; expect replies within one to two weeks.
 - [x] `prunecss.json` config file with JSON Schema
 - [x] Globs, `.gitignore`-aware discovery and parallel scanning
 - [x] `--check` mode, exit codes, JSON report, stdin, shell completions
-- [ ] Benchmarks against PurgeCSS
+- [x] Fuzzing, property tests, benchmarks against PurgeCSS
+- [ ] Keep the original bytes of every kept rule instead of reprinting it
+- [ ] Report wrongly removed CSS from a real browser (Playwright coverage)
 - [ ] npm package, Vite and PostCSS plugins
 - [ ] Language server and VS Code extension
 

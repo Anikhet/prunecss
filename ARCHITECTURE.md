@@ -117,8 +117,22 @@ happen.
   order.
 - **Never invent rules.** The output contains only rules and selectors from
   the input. Pruning is idempotent: pruning the output again changes nothing.
-- **Never panic on any input.** Broken CSS is skipped or reported as a
-  `PruneError`. Property tests check this.
+- **Never panic or abort on any input.** Broken CSS is skipped (each skip
+  is returned as a `ParseWarning`) or reported as a `PruneError`;
+  stylesheets nested more than 100 levels deep are refused before parsing,
+  so recursion can't overflow the stack. Property tests and fuzzing check
+  this.
+- **Never drop CSS silently.** Every rule the parser skips is reported, and
+  the CLI's `--check` counts it as a change.
+- **Never change what kept CSS means.** Removing a selector from a nesting
+  parent never lowers the specificity of its `&` children; printing targets
+  old browsers (no 8-digit hex, `min-width` media queries) without
+  flattening nesting; legacy `:-moz-placeholder`/`:-ms-input-placeholder`
+  are printed as written; `@charset "UTF-8"` is added when needed. Known
+  printer limits are listed in `fuzz/regressions/README.md`.
+- **Never write over an input or outside the output directory.** The CLI
+  plans every destination before reading or writing, mirroring paths from
+  the inputs' common parent.
 - **Output is deterministic.** Nothing iterates a `HashSet` or `HashMap` into
   the output. Same input, same bytes out, on every run and machine.
 - **The core does no IO of its own.** It never prints, reads or writes
