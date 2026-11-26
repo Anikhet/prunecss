@@ -2,6 +2,8 @@
 
 Remove unused CSS, fast. Written in Rust.
 
+[Changelog](CHANGELOG.md) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)
+
 > **Status: early development (0.x).** Review the output before shipping it,
 > and report anything wrongly removed.
 
@@ -127,6 +129,23 @@ variable used from JavaScript is kept.
 - Output is reprinted by Lightning CSS, so some values change to an equivalent
   form (`white` becomes `#fff`, `::before` becomes `:before`). Media queries
   keep the widely supported `min-width` form.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. Please read
+[CONTRIBUTING.md](CONTRIBUTING.md) first; for larger changes, open an issue
+before writing code. [ARCHITECTURE.md](ARCHITECTURE.md) gives a short tour of
+the code, and [docs/adr/](docs/adr/) records the main design decisions.
+
+prunecss is built with AI assistance (Claude Code), and every change is
+reviewed and tested by the maintainer. It is maintained by one person in
+their spare time; expect replies within one to two weeks.
+
+- Questions: see [SUPPORT.md](SUPPORT.md)
+- CSS wrongly removed? [Report a false removal](https://github.com/Anikhet/prunecss/issues/new?template=false_removal.yml)
+- Security issues: see [SECURITY.md](SECURITY.md); please don't open a public issue
+- Changes: see [CHANGELOG.md](CHANGELOG.md)
+- Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## Roadmap
 
