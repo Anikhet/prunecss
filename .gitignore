@@ -1,1 +1,11 @@
 /target
+
+# Benchmark harness (bench/): npm installs, scratch outputs, fetched or
+# generated corpora. corpus/manifest.json and corpus/edge/ are committed.
+/bench/node_modules
+/bench/.work
+/bench/.work-log.txt
+/bench/corpus/bootstrap
+/bench/corpus/bulma
+/bench/corpus/tailwind
+/bench/corpus/synthetic

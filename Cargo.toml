@@ -35,6 +35,8 @@ rustc-hash = "2.1"
 tempfile = "3.27"
 # Lightning CSS has never left 1.0.0-alpha; pin exactly so upgrades are deliberate.
 lightningcss = { version = "=1.0.0-alpha.72", default-features = false }
+# Micro-benchmarks only (crates/prunecss-core/benches); plots are not needed.
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
 [workspace.lints.rust]
 missing_docs = "warn"
