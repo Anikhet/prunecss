@@ -1,0 +1,13 @@
+---
+source: crates/prunecss-cli/tests/cli.rs
+expression: stdout(&output)
+---
+btn
+btn-primary
+card
+card-title
+container
+md:flex
+navbar
+navbar-dark
+no-print

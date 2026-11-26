@@ -1,0 +1,2 @@
+# Product names that are not code and need no backticks in docs.
+doc-valid-idents = ["PurgeCSS", "UnCSS", "PurifyCSS", "DropCSS", ".."]
