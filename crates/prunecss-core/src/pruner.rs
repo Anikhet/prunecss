@@ -1196,6 +1196,39 @@ mod tests {
                 );
             }
 
+            // More used names can only keep more: every rule kept with a
+            // smaller used set is also kept with a larger one.
+            #[test]
+            fn prune_is_monotonic_in_used_names(
+                css in stylesheet(),
+                smaller in used_names(),
+                extra in used_names(),
+            ) {
+                let larger: Vec<&str> = smaller.iter().chain(&extra).copied().collect();
+                let kept_small = prune_min(&css, &smaller);
+                let kept_large = prune_min(&css, &larger);
+                for rule in kept_small.split_inclusive('}') {
+                    prop_assert!(kept_large.contains(rule), "{rule} lost when adding {extra:?}");
+                }
+            }
+
+            // Pruning only removes: every output rule is an input rule.
+            #[test]
+            fn prune_never_invents_rules(css in stylesheet(), used in used_names()) {
+                let everything = prune_min(&css, &["a", "b", "c"]);
+                for rule in prune_min(&css, &used).split_inclusive('}') {
+                    prop_assert!(everything.contains(rule), "{rule} not in input");
+                }
+            }
+
+            // A standard safelist entry behaves exactly like the content using it.
+            #[test]
+            fn standard_safelist_equals_using_the_name(css in stylesheet(), used in used_names()) {
+                let options = PruneOptions::default().safelist(Safelist::default().standard(Pattern::exact("a")));
+                let with_a: Vec<&str> = used.iter().copied().chain(["a"]).collect();
+                prop_assert_eq!(prune_with(&css, &used, &options).css, prune_min(&css, &with_a));
+            }
+
             #[test]
             fn prune_is_idempotent(css in stylesheet(), used in used_names()) {
                 let once = prune_min(&css, &used);
