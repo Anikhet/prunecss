@@ -68,3 +68,14 @@ our side, test-first:
 2. Fix it upstream in Lightning CSS, or work around it in prunecss.
 3. Delete the bug's skip in `fuzz/src/lib.rs` and check the reproducer
    passes without `no-skips`.
+
+## Report-only targets
+
+`prune_idempotent` and `prune_output_reparses` check that printing and
+re-parsing is stable. On mangled input they keep finding new variants of the
+printer bugs above (for example a number inside an unknown pseudo-class,
+`:x(a7.98px)` printed as `a70.98px`, and an invalid `:has(> q.)` printed as
+`:has()`). In the daily CI run these two targets report and upload
+reproducers without failing; the panic and scanner targets still fail the
+run. The fix is structural: keep the original bytes of every kept rule
+instead of reprinting it.

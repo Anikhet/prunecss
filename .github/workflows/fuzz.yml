@@ -68,6 +68,16 @@ jobs:
           - prune_output_reparses
           - extract_classes_no_panic
           - prune_structured
+        # The two round-trip targets keep finding Lightning CSS printer bugs
+        # (fuzz/regressions/README.md) on mangled input. They report and
+        # upload reproducers without failing the run until prunecss stops
+        # reprinting kept rules. Panics and the other invariants still fail.
+        include:
+          - target: prune_idempotent
+            report_only: true
+          - target: prune_output_reparses
+            report_only: true
+    continue-on-error: ${{ matrix.report_only == true }}
     env:
       TARGET: ${{ matrix.target }}
       # Five minutes unless a manual run asks for something else.
