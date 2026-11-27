@@ -23,7 +23,7 @@ use rustc_hash::FxHashSet;
 /// any static scanner; safelist them instead.
 ///
 /// Names are borrowed from `source`; only names that exist after decoding
-/// HTML entities (`&amp;`, `&quot;`, …) are copied.
+/// HTML entities (`&amp;`, `&quot;`, `&colon;`, `&#38;`, …) are copied.
 ///
 /// ```
 /// use prunecss_core::extract_classes;
@@ -132,29 +132,127 @@ fn decode_entities(text: &str) -> Option<String> {
     changed.then_some(decoded)
 }
 
+/// Named entities that encoders emit for ASCII characters, from the HTML
+/// standard's list. Characters outside ASCII cannot be part of a Tailwind
+/// name's punctuation, so only these are needed. (`&hyphen;`, `&dash;` and
+/// `&tilde;` are not here on purpose: they stand for U+2010 and U+02DC, not
+/// for `-` and `~`.)
+const NAMED_ENTITIES: [(&str, char); 46] = [
+    ("amp", '&'),
+    ("AMP", '&'),
+    ("quot", '"'),
+    ("QUOT", '"'),
+    ("apos", '\''),
+    ("lt", '<'),
+    ("LT", '<'),
+    ("gt", '>'),
+    ("GT", '>'),
+    ("nbsp", ' '),
+    ("Tab", '\t'),
+    ("NewLine", '\n'),
+    ("colon", ':'),
+    ("semi", ';'),
+    ("lsqb", '['),
+    ("lbrack", '['),
+    ("rsqb", ']'),
+    ("rbrack", ']'),
+    ("lpar", '('),
+    ("rpar", ')'),
+    ("lcub", '{'),
+    ("lbrace", '{'),
+    ("rcub", '}'),
+    ("rbrace", '}'),
+    ("sol", '/'),
+    ("bsol", '\\'),
+    ("num", '#'),
+    ("period", '.'),
+    ("comma", ','),
+    ("excl", '!'),
+    ("quest", '?'),
+    ("equals", '='),
+    ("plus", '+'),
+    ("ast", '*'),
+    ("midast", '*'),
+    ("percnt", '%'),
+    ("dollar", '$'),
+    ("commat", '@'),
+    ("lowbar", '_'),
+    ("UnderBar", '_'),
+    ("verbar", '|'),
+    ("vert", '|'),
+    ("VerticalLine", '|'),
+    ("Hat", '^'),
+    ("grave", '`'),
+    ("DiacriticalGrave", '`'),
+];
+
+/// The longest name in [`NAMED_ENTITIES`] (`DiacriticalGrave`).
+const MAX_ENTITY_NAME: usize = 16;
+
+/// Entities that browsers also decode without the `;`, for compatibility
+/// with old markup (`[&amp_p]:mt-2`). Only the ASCII ones matter here.
+const LEGACY_ENTITIES: [(&str, char); 9] = [
+    ("amp", '&'),
+    ("AMP", '&'),
+    ("quot", '"'),
+    ("QUOT", '"'),
+    ("lt", '<'),
+    ("LT", '<'),
+    ("gt", '>'),
+    ("GT", '>'),
+    ("nbsp", ' '),
+];
+
 /// Decodes one entity at the start of `text` (just after `&`), returning the
-/// character and how many bytes the entity used, including the `;`.
+/// character and how many bytes the entity used, including any `;`.
 fn decode_one(text: &str) -> Option<(char, usize)> {
-    // Entity names and numbers are short and ASCII; `;` is a char boundary.
-    let end = text.bytes().take(12).position(|byte| byte == b';')?;
-    let body = &text[..end];
-    let ch = match body {
-        "amp" => '&',
-        "quot" => '"',
-        "apos" => '\'',
-        "lt" => '<',
-        "gt" => '>',
-        "nbsp" => ' ',
-        _ => {
-            let number = body.strip_prefix('#')?;
-            let code = match number.strip_prefix(['x', 'X']) {
-                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
-                None => number.parse().ok()?,
-            };
-            char::from_u32(code)?
-        }
+    if let Some(number) = text.strip_prefix('#') {
+        return decode_numeric(number).map(|(ch, used)| (ch, used + 1));
+    }
+    // Entity names are ASCII, so `name_len` is a char boundary. Capping the
+    // look-ahead keeps a long word after `&` from being scanned twice.
+    let name_len = text
+        .bytes()
+        .take(MAX_ENTITY_NAME + 1)
+        .take_while(u8::is_ascii_alphanumeric)
+        .count();
+    let name = &text[..name_len];
+    if text.as_bytes().get(name_len) == Some(&b';')
+        && let Some(&(_, ch)) = NAMED_ENTITIES.iter().find(|(known, _)| *known == name)
+    {
+        return Some((ch, name_len + 1));
+    }
+    // Browsers decode a legacy entity even when letters follow (`&ampx` is
+    // `&x` in text), so match a prefix. Decoding too eagerly only adds
+    // candidates: the raw text is scanned as well.
+    LEGACY_ENTITIES
+        .iter()
+        .find(|(known, _)| name.starts_with(known))
+        .map(|&(known, ch)| (ch, known.len()))
+}
+
+/// Decodes the digits of a numeric reference (after `&#`): `38;`, `x26;`,
+/// or the same without the `;`, which browsers also accept.
+fn decode_numeric(text: &str) -> Option<(char, usize)> {
+    let (prefix, radix) = if text.starts_with(['x', 'X']) {
+        (1, 16)
+    } else {
+        (0, 10)
     };
-    Some((ch, end + 1))
+    // The prefix and the digits are ASCII, so these are char boundaries.
+    let digits = text[prefix..]
+        .bytes()
+        .take_while(|byte| char::from(*byte).is_digit(radix))
+        .count();
+    if digits == 0 {
+        return None;
+    }
+    let code = u32::from_str_radix(&text[prefix..prefix + digits], radix).ok()?;
+    let mut used = prefix + digits;
+    if text.as_bytes().get(used) == Some(&b';') {
+        used += 1;
+    }
+    Some((char::from_u32(code)?, used))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,12 +502,39 @@ mod tests {
 
     // Third review: each of these deleted CSS a page uses.
     #[rstest]
+    #[case::entity_colon(r#"<p class="hover&colon;underline">"#, &["hover:underline"])]
+    #[case::entity_square_brackets(r#"<p class="w-&lsqb;10px&rsqb;">"#, &["w-[10px]"])]
+    #[case::entity_brack_names(r#"<p class="w-&lbrack;10px&rbrack;">"#, &["w-[10px]"])]
+    #[case::entity_solidus(r#"<p class="w-1&sol;2">"#, &["w-1/2"])]
+    #[case::entity_lowbar_and_num(r#"<p class="[&amp;&lowbar;p]:mt-2 &num;x">"#, &["[&_p]:mt-2", "x"])]
+    #[case::entity_punctuation(
+        r#"<p class="a&excl; &quest;b c&period;d e&comma;f g&equals;h">"#,
+        &["a!", "?b", "d", "f", "h"]
+    )]
+    #[case::entity_math(r#"<p class="&ast;:p-4 w-&lsqb;50&percnt;&rsqb; [&plus;_p]:m-0">"#, &["*:p-4", "w-[50%]", "[+_p]:m-0"])]
+    #[case::entity_at(r#"<p class="&commat;md:flex">"#, &["@md:flex"])]
+    #[case::legacy_amp_without_semicolon(r#"<p class="[&amp_p]:mt-2">"#, &["[&_p]:mt-2"])]
+    #[case::legacy_quot_without_semicolon(r#"<i data-x="<b class=&quotbadge&quot>">"#, &["badge"])]
+    #[case::numeric_without_semicolon(r#"<p class="[&#38_p]:mt-2">"#, &["[&_p]:mt-2"])]
     #[case::fragment_in_path(r#"<a href="/about#team">"#, &["team"])]
     fn extract_classes_should_find_names_the_third_review_found_missing(
         #[case] source: &str,
         #[case] expected: &[&str],
     ) {
         assert_finds(source, expected);
+    }
+
+    #[test]
+    fn extract_classes_should_borrow_names_that_exist_before_decoding() {
+        let found = extract_classes(r#"<p class="hover&colon;underline hover">"#);
+        let owned: Vec<&str> = found
+            .iter()
+            .filter(|name| matches!(name, Cow::Owned(_)))
+            .map(AsRef::as_ref)
+            .collect();
+        // `hover` and `underline` are in the raw text, so only the joined
+        // name is copied.
+        assert_eq!(owned, vec!["hover:underline"]);
     }
 
     #[rstest]
