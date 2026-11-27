@@ -249,13 +249,18 @@ fn css_inputs(settings: &PruneSettings, output: Option<&Path>) -> Result<Vec<Inp
     // always an input, so the overwrite check in `plan_outputs` protects it.
     let mut skipped = 0_usize;
     let mut files = Vec::with_capacity(matched.len());
-    let output_dir = output
-        .filter(|output| is_directory_like(output, settings.output.as_deref()))
-        .map(files::normalize);
+    let output_dir = output.filter(|output| is_directory_like(output, settings.output.as_deref()));
+    let lexical_dir = output_dir.map(files::normalize);
+    // By real path too, so an output directory reached through a symlink or
+    // spelled in another case on a case-insensitive file system still counts.
+    let canonical_dir = output_dir.and_then(|dir| dir.canonicalize().ok());
     for file in &matched {
-        let inside_output = output_dir
+        let inside_output = lexical_dir
             .as_ref()
-            .is_some_and(|dir| files::normalize(file).starts_with(dir));
+            .is_some_and(|dir| files::normalize(file).starts_with(dir))
+            || canonical_dir
+                .as_ref()
+                .is_some_and(|dir| file.canonicalize().is_ok_and(|file| file.starts_with(dir)));
         if inside_output && !named_explicitly(file, patterns, &settings.css.base) {
             skipped += 1;
         } else {

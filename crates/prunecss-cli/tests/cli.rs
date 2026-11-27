@@ -928,3 +928,24 @@ fn output_should_refuse_a_symlinked_subdirectory_inside_the_output_directory() {
     assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
     assert!(!dir.path().join("elsewhere/b.css").exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn output_directory_should_be_excluded_from_globs_through_a_symlink() {
+    let dir = sample_project();
+    std::fs::create_dir(dir.path().join("pruned")).unwrap();
+    symlink("pruned", &dir.path().join("link"));
+    let args = ["prune", "**/*.css", "-c", "src", "-o", "link/"];
+    let first = run_in(dir.path(), &args, None);
+    let second = run_in(dir.path(), &args, None);
+    assert_eq!(
+        (first.status.code(), second.status.code()),
+        (Some(0), Some(0)),
+        "{}",
+        stderr(&second)
+    );
+    assert!(
+        !dir.path().join("pruned/pruned").exists(),
+        "previous output was pruned again"
+    );
+}
