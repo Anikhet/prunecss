@@ -15,6 +15,20 @@ not a raw commit log. See [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages).
 
 ## [Unreleased]
 
+### Fixed
+
+- CLI: never overwrites an input stylesheet or content file, including
+  through hard links and symlinks; follows symlinked content files; exits
+  quietly on a broken pipe; boolean flags have `--no-*` forms.
+- Scanner: finds Tailwind v4 classes with `(--var)` values and names
+  written with double-escaped or named HTML entities.
+- Pruner: tracks custom properties with escaped names; the nesting-depth
+  limit can no longer be bypassed; legacy placeholder pseudo-classes are
+  repaired inside `:nth-child(… of …)` and `@scope`; at-rules with an empty
+  prelude are reported.
+
+## [0.1.0] - Unreleased
+
 ### Added
 
 - **Scanner** that finds candidate class names in any text: HTML, JSX/TSX
@@ -86,4 +100,5 @@ not a raw commit log. See [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages).
   stack.
 - The scanner is about 5× faster (hash-set de-duplication).
 
-[Unreleased]: https://github.com/Anikhet/prunecss/commits/main
+[Unreleased]: https://github.com/Anikhet/prunecss/compare/prunecss-v0.1.0...HEAD
+[0.1.0]: https://github.com/Anikhet/prunecss/releases/tag/prunecss-v0.1.0

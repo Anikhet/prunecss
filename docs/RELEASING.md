@@ -66,6 +66,17 @@ number.
 
 ### 3. Publish 0.1.0 by hand
 
+First finish the 0.1.0 notes in `CHANGELOG.md`, in a PR merged to `main`:
+
+- Move everything under `## [Unreleased]` into the `## [0.1.0]` section.
+- Replace `Unreleased` in the `## [0.1.0] - Unreleased` heading with the
+  publish date, for example `## [0.1.0] - 2026-12-01`.
+- Leave the `## [Unreleased]` heading above it, empty.
+
+release-plz inserts each new release right below `## [Unreleased]`, so
+anything left under that heading would end up inside the next generated
+release section.
+
 The library has to exist before the CLI that depends on it:
 
 ```bash
