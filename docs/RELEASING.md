@@ -181,8 +181,13 @@ Commits] prefixes:
 | `remove: ...` | Removed |
 | `fix: ...` | Fixed |
 | `security: ...` | Security |
+| `chore(deps): ...`, `build(deps): ...` | Dependencies |
 | `ci:`, `test:`, `docs:`, `chore:`, `build:`, `style:` | not listed |
 | anything else | Changed |
+
+A commit whose body mentions "security" is listed under Security whatever
+its type. Dependabot's cargo PRs use `chore(deps)`, so a Lightning CSS
+upgrade always shows up in the release PR's changelog.
 
 Add `!` for a breaking change (`feat!: rename --out to --output`). It is
 always listed and marked **breaking**. While the version is `0.x`, a breaking

@@ -75,6 +75,10 @@ commit_parsers = [
     { message = "^fix", group = "<!-- 4 -->Fixed" },
     { message = "^security", group = "<!-- 5 -->Security" },
     { body = ".*security", group = "<!-- 5 -->Security" },
+    # Dependabot's cargo updates (`chore(deps): bump lightningcss ...`). A
+    # Lightning CSS upgrade can change the CSS we print, so users should see
+    # it. Must come before the housekeeping skip below.
+    { message = "^(chore|build)\\(deps\\)", group = "<!-- 6 -->Dependencies" },
     # Housekeeping that users do not need to read about.
     { message = "^(ci|test|style|chore|build)", skip = true },
     { message = "^docs", skip = true },
