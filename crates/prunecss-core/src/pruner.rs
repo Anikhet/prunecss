@@ -9,11 +9,11 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::BuildHasher;
 use std::sync::{Arc, RwLock};
 
-use lightningcss::error::{ParserError, SelectorError};
+use lightningcss::error::ParserError;
 use lightningcss::rules::style::StyleRule;
 use lightningcss::rules::{CssRule, CssRuleList};
 use lightningcss::selector::{Component, PseudoClass, Selector};
@@ -167,8 +167,10 @@ pub struct ParseWarning {
     pub message: String,
     /// Where it starts in the input, if known.
     pub location: Option<SourceLocation>,
-    /// Whether the rule is missing from the output. Unknown at-rules and
-    /// pseudo-classes are warned about but kept exactly as written.
+    /// Whether the rule or declaration is missing from the output, judged
+    /// by what the parser kept. Unknown at-rules and pseudo-classes, and
+    /// media queries the parser recovers, are warned about but kept
+    /// exactly as written.
     pub dropped: bool,
 }
 
@@ -298,6 +300,14 @@ pub fn prune(
     let css = masked.as_deref().unwrap_or(css);
     let warnings = Arc::new(RwLock::new(Vec::new()));
     let mut sheet = parse_sheet(css, Some(Arc::clone(&warnings)))?;
+    // Whether a warned-about rule was dropped is judged by what the parser
+    // kept, so note where every parsed rule starts before pruning.
+    let any_warnings = warnings.read().is_ok_and(|warnings| !warnings.is_empty());
+    let rule_starts = if any_warnings {
+        rule_starts(&sheet.rules)
+    } else {
+        Vec::new()
+    };
 
     let matcher = Matcher {
         used,
@@ -345,17 +355,14 @@ pub fn prune(
         .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Print, &err))?;
     let warnings = warnings
         .read()
-        .map(|warnings| {
-            warnings
-                .iter()
-                .map(|warning| {
-                    let mut warning = ParseWarning::from_lightningcss(warning);
-                    warning.message = masks.unmask(warning.message);
-                    warning
-                })
-                .collect()
+        .map(|errors| classify_warnings(css, &rule_starts, &errors))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|mut warning| {
+            warning.message = masks.unmask(warning.message);
+            warning
         })
-        .unwrap_or_default();
+        .collect();
 
     Ok(PruneOutput {
         css: with_charset(masks.unmask(printed.code), css, options.minify),
@@ -953,20 +960,9 @@ fn with_charset(code: String, input: &str, minify: bool) -> String {
 }
 
 impl ParseWarning {
-    fn from_lightningcss(err: &lightningcss::error::Error<ParserError<'_>>) -> Self {
-        // These are printed unchanged: `@tailwind base;`, `.a:foo`, and a
-        // stray `}` at the end, which has nothing to drop.
-        let kept = matches!(
-            err.kind,
-            ParserError::AtRuleInvalid(_)
-                | ParserError::EndOfInput
-                | ParserError::SelectorError(
-                    SelectorError::UnsupportedPseudoClass(_)
-                        | SelectorError::UnsupportedPseudoElement(_)
-                )
-        );
+    fn from_lightningcss(err: &LightningError<'_>, dropped: bool) -> Self {
         Self {
-            dropped: !kept,
+            dropped,
             message: err.kind.to_string(),
             location: err.loc.as_ref().map(|loc| SourceLocation {
                 line: loc.line.saturating_add(1),
@@ -974,6 +970,204 @@ impl ParseWarning {
             }),
         }
     }
+}
+
+type LightningError<'i> = lightningcss::error::Error<ParserError<'i>>;
+
+/// A position as Lightning CSS reports it: 0-based line, 1-based column
+/// in UTF-16 code units. Ordered like the text.
+type LineColumn = (u32, u32);
+
+/// Turns parser errors into warnings, deciding `dropped` by what survived
+/// rather than by error kind: the same kind can mean either (an empty
+/// `@supports` prelude is "unexpected end of input" and dropped, a broken
+/// media feature is "invalid media query" and kept as written).
+///
+/// A rule the parser kept appears in `rule_starts`. An error inside the
+/// prelude of a kept rule (before its `{` or `;`) was recovered in place,
+/// so nothing went missing. Anywhere else, the error is about a rule or
+/// declaration that has no place in the parsed sheet: it was dropped. The
+/// one exception is an error at the very end of input after nothing but
+/// stray closing brackets, which drops nothing.
+fn classify_warnings(
+    css: &str,
+    rule_starts: &[LineColumn],
+    errors: &[LightningError<'_>],
+) -> Vec<ParseWarning> {
+    let position = |err: &LightningError<'_>| err.loc.as_ref().map(|loc| (loc.line, loc.column));
+    // The kept rule that starts last at or before `at`.
+    let owner = |at: LineColumn| {
+        let after = rule_starts.partition_point(|start| *start <= at);
+        after
+            .checked_sub(1)
+            .and_then(|index| rule_starts.get(index))
+            .copied()
+    };
+    let mut targets: Vec<LineColumn> = errors
+        .iter()
+        .filter_map(position)
+        .flat_map(|at| [Some(at), owner(at)])
+        .flatten()
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    let offsets = byte_offsets(css, &targets);
+    let offset_of = |at: LineColumn| {
+        targets
+            .binary_search(&at)
+            .ok()
+            .and_then(|index| offsets.get(index).copied())
+    };
+    let junk_tail = offsets.iter().any(|&offset| offset >= css.len()) && tail_is_junk(css);
+    let mut prelude_ends = BTreeMap::new();
+    errors
+        .iter()
+        .map(|err| {
+            let kept = position(err).and_then(|at| {
+                let offset = offset_of(at)?;
+                let in_kept_prelude = owner(at).and_then(offset_of).is_some_and(|start| {
+                    let end = *prelude_ends
+                        .entry(start)
+                        .or_insert_with(|| prelude_end(css, start));
+                    offset <= end
+                });
+                Some(in_kept_prelude || (offset >= css.len() && junk_tail))
+            });
+            ParseWarning::from_lightningcss(err, !kept.unwrap_or(false))
+        })
+        .collect()
+}
+
+/// Where every parsed rule starts, sorted. Nested declarations are left
+/// out: they are not rules the user wrote, so an error among them belongs
+/// to the enclosing rule's block.
+fn rule_starts<R>(rules: &CssRuleList<'_, R>) -> Vec<LineColumn> {
+    fn collect<R>(rules: &CssRuleList<'_, R>, starts: &mut Vec<LineColumn>) {
+        for rule in &rules.0 {
+            let loc = match rule {
+                CssRule::Media(rule) => Some(rule.loc),
+                CssRule::Import(rule) => Some(rule.loc),
+                CssRule::Style(rule) => Some(rule.loc),
+                CssRule::Keyframes(rule) => Some(rule.loc),
+                CssRule::FontFace(rule) => Some(rule.loc),
+                CssRule::FontPaletteValues(rule) => Some(rule.loc),
+                CssRule::FontFeatureValues(rule) => Some(rule.loc),
+                CssRule::Page(rule) => Some(rule.loc),
+                CssRule::Supports(rule) => Some(rule.loc),
+                CssRule::CounterStyle(rule) => Some(rule.loc),
+                CssRule::Namespace(rule) => Some(rule.loc),
+                CssRule::MozDocument(rule) => Some(rule.loc),
+                CssRule::Nesting(rule) => Some(rule.loc),
+                CssRule::Viewport(rule) => Some(rule.loc),
+                CssRule::CustomMedia(rule) => Some(rule.loc),
+                CssRule::LayerStatement(rule) => Some(rule.loc),
+                CssRule::LayerBlock(rule) => Some(rule.loc),
+                CssRule::Property(rule) => Some(rule.loc),
+                CssRule::Container(rule) => Some(rule.loc),
+                CssRule::Scope(rule) => Some(rule.loc),
+                CssRule::StartingStyle(rule) => Some(rule.loc),
+                CssRule::ViewTransition(rule) => Some(rule.loc),
+                CssRule::PositionTry(rule) => Some(rule.loc),
+                CssRule::Unknown(rule) => Some(rule.loc),
+                // Anything else has no location; an error about it is
+                // reported as dropped, the safe side.
+                _ => None,
+            };
+            starts.extend(loc.map(|loc| (loc.line, loc.column)));
+            if let Some(group) = rules::group_rules(rule) {
+                collect(group, starts);
+            }
+            match rule {
+                CssRule::Style(style) => collect(&style.rules, starts),
+                CssRule::Nesting(nesting) => collect(&nesting.style.rules, starts),
+                CssRule::LayerBlock(layer) => collect(&layer.rules, starts),
+                _ => {}
+            }
+        }
+    }
+    let mut starts = Vec::new();
+    collect(rules, &mut starts);
+    starts.sort_unstable();
+    starts.dedup();
+    starts
+}
+
+/// Converts sorted Lightning CSS positions to byte offsets in one pass,
+/// counting lines and columns exactly as cssparser does.
+fn byte_offsets(css: &str, targets: &[LineColumn]) -> Vec<usize> {
+    let bytes = css.as_bytes();
+    let mut offsets = Vec::with_capacity(targets.len());
+    let mut pending = targets.iter().peekable();
+    let (mut line, mut column, mut index) = (0_u32, 1_u32, 0);
+    while let Some(&byte) = bytes.get(index) {
+        while pending.next_if(|at| **at <= (line, column)).is_some() {
+            offsets.push(index);
+        }
+        if pending.peek().is_none() {
+            break;
+        }
+        index += 1;
+        match byte {
+            b'\n' | b'\x0C' => (line, column) = (line.saturating_add(1), 1),
+            b'\r' => {
+                if bytes.get(index) == Some(&b'\n') {
+                    index += 1;
+                }
+                (line, column) = (line.saturating_add(1), 1);
+            }
+            // Continuation bytes add nothing; a 4-byte character is two
+            // UTF-16 code units.
+            0x80..=0xBF => {}
+            0xF0..=0xFF => column = column.saturating_add(2),
+            _ => column = column.saturating_add(1),
+        }
+    }
+    offsets.resize(targets.len(), bytes.len());
+    offsets
+}
+
+/// Where the prelude of the rule starting at `start` ends: the offset of
+/// its `{` or `;`, or the end of input.
+fn prelude_end(css: &str, start: usize) -> usize {
+    let mut tokens = Tokenizer::new(css);
+    tokens.pos = start;
+    let mut open: Vec<u8> = Vec::new();
+    loop {
+        let at = tokens.pos;
+        match tokens.next_token() {
+            None => return css.len(),
+            Some(Token::Open(b'}') | Token::Semicolon) if open.is_empty() => return at,
+            Some(Token::Open(close)) => open.push(close),
+            Some(Token::Close(close)) if open.last() == Some(&close) => {
+                open.pop();
+            }
+            Some(_) => {}
+        }
+    }
+}
+
+/// Whether `css` ends with nothing but whitespace, comments and stray
+/// closing brackets after its last complete rule or declaration.
+fn tail_is_junk(css: &str) -> bool {
+    let mut tokens = Tokenizer::new(css);
+    let mut open: Vec<u8> = Vec::new();
+    let mut junk = true;
+    while let Some(token) = tokens.next_token() {
+        match token {
+            Token::Open(close) => {
+                open.push(close);
+                junk = false;
+            }
+            Token::Close(close) if open.last() == Some(&close) => {
+                open.pop();
+                junk |= close == b'}';
+            }
+            Token::Semicolon if !matches!(open.last(), Some(b')' | b']')) => junk = true,
+            Token::Close(_) | Token::Trivia => {}
+            Token::Semicolon | Token::Other => junk = false,
+        }
+    }
+    junk
 }
 
 /// Returns every class and id name that selectors in `css` mention,
@@ -2182,6 +2376,53 @@ mod tests {
         let output = prune(css, &used, &PruneOptions::default());
         let dropped = output.map(|output| output.warnings.iter().filter(|w| w.dropped).count());
         assert_eq!(dropped.ok(), Some(0));
+    }
+
+    fn dropped_flags(css: &str) -> Vec<bool> {
+        let used = BTreeSet::from(["a", "x", "y"]);
+        match prune(css, &used, &PruneOptions::default()) {
+            Ok(output) => output.warnings.iter().map(|w| w.dropped).collect(),
+            Err(err) => panic!("{err}"),
+        }
+    }
+
+    // Third review: `dropped` must say whether the rule disappeared, not
+    // guess from the error kind. Lightning CSS reports an empty at-rule
+    // prelude as "unexpected end of input" and drops the rule; it reports
+    // an invalid media feature as "invalid media query" and keeps it.
+    #[rstest]
+    #[case::supports_without_condition("@supports{.a{color:red}}.a{color:blue}")]
+    #[case::keyframes_without_name("@keyframes{}.a{color:red}")]
+    #[case::counter_style_without_name("@counter-style{}.a{color:red}")]
+    #[case::font_feature_values_without_family("@font-feature-values{}.a{color:red}")]
+    #[case::font_palette_values_without_name("@font-palette-values{}.a{color:red}")]
+    #[case::moz_document_without_condition("@-moz-document{.a{color:red}}")]
+    #[case::property_without_name("@property{}.a{color:red}")]
+    #[case::namespace_without_url("@namespace;.a{color:red}")]
+    #[case::nested_rule_in_media("@media print{.x >>> .y{color:red}}")]
+    #[case::nested_rule_in_style_rule(".a{color:red;.x >>> .y{color:red}}")]
+    #[case::invalid_declaration(".a{color:red; !!!; background:blue}")]
+    #[case::rule_after_stray_brace(".a{}}.x{color:red}")]
+    fn prune_should_report_rules_the_parser_dropped_as_dropped(#[case] css: &str) {
+        assert_eq!(dropped_flags(css).first(), Some(&true));
+    }
+
+    #[rstest]
+    #[case::media_feature_without_value("@media screen and (min-width:){.a{color:red}}")]
+    #[case::container_feature_without_value("@container (min-width:){.a{color:red}}")]
+    #[case::media_feature_with_two_values("@media (min-width: foo bar){.a{color:red}}")]
+    #[case::container_without_condition("@container{.a{color:red}}")]
+    #[case::deprecated_nest(".a{color:red;@nest .x &{color:red}}")]
+    #[case::unknown_pseudo_class_in_scope("@scope (.a:foo){.a{color:red}}")]
+    #[case::multi_line("\n@media screen\r\n  and (min-width:)\x0c{.a{color:red}}")]
+    #[case::after_wide_characters("/* 😀é */ @media (min-width:){.a{color:red}}")]
+    fn prune_should_report_rules_the_parser_kept_as_kept(#[case] css: &str) {
+        let flags = dropped_flags(css);
+        assert_eq!(
+            (flags.is_empty(), flags.contains(&true)),
+            (false, false),
+            "{css:?}"
+        );
     }
 
     #[test]
