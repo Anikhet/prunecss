@@ -1064,3 +1064,64 @@ fn scan_should_exit_cleanly_when_standard_output_is_closed() {
         (Some(0), String::new())
     );
 }
+
+/// Runs `flag` against a config that turns `key` on, and the same CSS with
+/// no config at all: the flag must win, giving the default output.
+fn assert_flag_overrides_config(key: &str, flag: &str) {
+    let dir = project(&[
+        ("i.html", r#"<p class="a" style="font-family: x">"#),
+        (
+            "s.css",
+            ":root{--unused:1}@keyframes spin{to{opacity:0}}\
+             @font-face{font-family:nobody;src:url(n.woff)}.a{color:red}",
+        ),
+    ]);
+    std::fs::write(
+        dir.path().join("prunecss.json"),
+        format!(r#"{{ "css": ["s.css"], "content": ["i.html"], "{key}": true }}"#),
+    )
+    .unwrap();
+    let overridden = run_in(dir.path(), &["prune", flag], None);
+    let default = run_in(
+        dir.path(),
+        &["prune", "--no-config", "s.css", "-c", "i.html"],
+        None,
+    );
+    assert_eq!(
+        stdout(&overridden),
+        stdout(&default),
+        "{}",
+        stderr(&overridden)
+    );
+}
+
+#[test]
+fn no_minify_should_override_the_config() {
+    assert_flag_overrides_config("minify", "--no-minify");
+}
+
+#[test]
+fn no_keyframes_should_override_the_config() {
+    assert_flag_overrides_config("keyframes", "--no-keyframes");
+}
+
+#[test]
+fn no_font_face_should_override_the_config() {
+    assert_flag_overrides_config("fontFace", "--no-font-face");
+}
+
+#[test]
+fn no_variables_should_override_the_config() {
+    assert_flag_overrides_config("variables", "--no-variables");
+}
+
+#[test]
+fn the_last_of_minify_and_no_minify_should_win() {
+    let dir = project(&[("i.html", r#"<p class="a">"#), ("s.css", ".a{color:red}")]);
+    let output = run_in(
+        dir.path(),
+        &["prune", "s.css", "-c", "i.html", "--no-minify", "--minify"],
+        None,
+    );
+    assert_eq!(stdout(&output), ".a{color:red}");
+}

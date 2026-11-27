@@ -28,7 +28,8 @@ const EXIT_ERROR: u8 = 2;
 /// Remove unused CSS, fast.
 ///
 /// Settings come from command-line flags, then the nearest prunecss.json
-/// (in the current directory or a parent), then defaults.
+/// (in the current directory or a parent), then defaults. Each on/off
+/// setting has a --no-* flag to turn off what the file turns on.
 #[derive(Parser)]
 #[command(version, about, long_about)]
 #[command(after_help = "Examples:
@@ -85,8 +86,11 @@ struct PruneArgs {
     #[arg(long, short, value_name = "PATH")]
     output: Option<PathBuf>,
     /// Print the result without whitespace.
-    #[arg(long)]
+    #[arg(long, overrides_with = "no_minify")]
     minify: bool,
+    /// Keep whitespace, even if prunecss.json sets `minify`.
+    #[arg(long, overrides_with = "minify")]
+    no_minify: bool,
     /// Print a summary of what was removed to standard error.
     #[arg(long)]
     stats: bool,
@@ -111,14 +115,31 @@ struct PruneArgs {
     safelist_deep: Vec<Pattern>,
 
     /// Also remove @keyframes that nothing uses.
-    #[arg(long, help_heading = "Unused at-rules (off by default)")]
+    #[arg(long, overrides_with = "no_keyframes", help_heading = AT_RULES)]
     keyframes: bool,
+    /// Keep unused @keyframes, even if prunecss.json sets `keyframes`.
+    #[arg(long, overrides_with = "keyframes", help_heading = AT_RULES)]
+    no_keyframes: bool,
     /// Also remove @font-face rules whose family nothing uses.
-    #[arg(long, help_heading = "Unused at-rules (off by default)")]
+    #[arg(long, overrides_with = "no_font_face", help_heading = AT_RULES)]
     font_face: bool,
+    /// Keep unused @font-face rules, even if prunecss.json sets `fontFace`.
+    #[arg(long, overrides_with = "font_face", help_heading = AT_RULES)]
+    no_font_face: bool,
     /// Also remove custom properties (--name) that nothing reads.
-    #[arg(long, help_heading = "Unused at-rules (off by default)")]
+    #[arg(long, overrides_with = "no_variables", help_heading = AT_RULES)]
     variables: bool,
+    /// Keep unused custom properties, even if prunecss.json sets `variables`.
+    #[arg(long, overrides_with = "variables", help_heading = AT_RULES)]
+    no_variables: bool,
+}
+
+const AT_RULES: &str = "Unused at-rules (off by default)";
+
+/// A setting with an on and an off flag: the flag given wins (clap keeps
+/// only the last of the pair), otherwise the config's value.
+fn flag(on: bool, off: bool, from_config: bool) -> bool {
+    on || (!off && from_config)
 }
 
 #[derive(Args)]
@@ -264,11 +285,11 @@ fn prune_settings(args: PruneArgs, loaded: &Loaded) -> Result<PruneSettings> {
     safelist.deep.extend(args.safelist_deep);
 
     let options = PruneOptions::default()
-        .minify(args.minify || config.minify)
+        .minify(flag(args.minify, args.no_minify, config.minify))
         .safelist(safelist)
-        .keyframes(args.keyframes || config.keyframes)
-        .font_face(args.font_face || config.font_face)
-        .variables(args.variables || config.variables);
+        .keyframes(flag(args.keyframes, args.no_keyframes, config.keyframes))
+        .font_face(flag(args.font_face, args.no_font_face, config.font_face))
+        .variables(flag(args.variables, args.no_variables, config.variables));
 
     // `-` means standard output, wherever it comes from.
     let output = args.output.or_else(|| {
