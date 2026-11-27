@@ -309,7 +309,8 @@ environment breaks publishing until crates.io is updated too.
 - `.github/dependabot.yml` proposes grouped dependency and action updates
   every Monday. Lightning CSS always gets its own PR: it is pinned to an exact
   alpha version, and an upgrade can change CSS output or raise the MSRV, so
-  review its changelog and the snapshot diffs before merging.
+  review its changelog and the snapshot diffs before merging. The same PR
+  updates the pin in `fuzz/Cargo.toml`, which has its own lockfile.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Conventional Commits]: https://www.conventionalcommits.org/en/v1.0.0/

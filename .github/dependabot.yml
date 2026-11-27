@@ -3,7 +3,9 @@
 version: 2
 updates:
   - package-ecosystem: cargo
-    directory: /
+    # fuzz/ is its own workspace with its own lockfile, and pins the same
+    # Lightning CSS version as the main workspace.
+    directories: ["/", "/fuzz"]
     schedule:
       interval: weekly
       day: monday
@@ -26,6 +28,8 @@ updates:
       # diffs and the MSRV job before merging.
       lightningcss:
         patterns: ["lightningcss"]
+        # One PR for both directories, so the two exact pins move together.
+        group-by: dependency-name
       # Everything else that is semver-compatible arrives as one PR.
       cargo-compatible:
         patterns: ["*"]

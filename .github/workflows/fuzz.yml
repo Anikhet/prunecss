@@ -1,12 +1,16 @@
 name: Fuzz
 
-# Pull requests only check that the fuzz targets still compile; actually
-# fuzzing them runs once a day (and on demand), time-boxed per target.
+# Pull requests check that the fuzz targets still compile and replay the
+# committed seeds and regressions once; actually fuzzing them runs once a day
+# (and on demand), time-boxed per target.
 on:
   pull_request:
     paths:
       - "crates/prunecss-core/**"
       - "fuzz/**"
+      # Workspace dependency versions (Lightning CSS) reach the fuzz build.
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/fuzz.yml"
   schedule:
     # Daily, at an off-peak minute.
@@ -44,12 +48,28 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: fuzz
+          # Only runs on main write the cache, so a PR cannot poison it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked --version "$CARGO_FUZZ_VERSION"
       - name: Check the fuzz lockfile is up to date
         run: cargo +nightly fetch --locked --manifest-path fuzz/Cargo.toml
       - name: Build every target
         run: cargo +nightly fuzz build -s none
+      - name: Check that the known-bug skips stay narrow
+        run: cargo +nightly test --locked --manifest-path fuzz/Cargo.toml
+      - name: Replay the seed corpus and regressions
+        # -runs=0 runs each committed input once: a cheap regression test.
+        run: |
+          for target in $(cargo +nightly fuzz list); do
+            dirs=("fuzz/corpus/$target")
+            if [ -d "fuzz/regressions/$target" ]; then
+              dirs+=("fuzz/regressions/$target")
+            fi
+            echo "::group::$target"
+            cargo +nightly fuzz run "$target" -s none "${dirs[@]}" -- -runs=0
+            echo "::endgroup::"
+          done
       - name: Check the optional strict features compile
         run: cargo +nightly check --locked --manifest-path fuzz/Cargo.toml --all-features
 
@@ -92,6 +112,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: fuzz
+          # Only runs on main write the cache, so a PR cannot poison it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked --version "$CARGO_FUZZ_VERSION"
       - name: Fuzz
@@ -103,6 +125,17 @@ jobs:
             "fuzz/corpus-work/$TARGET" "fuzz/corpus/$TARGET" -- \
             -max_total_time="$FUZZ_SECONDS" -timeout=1 \
             -dict=fuzz/dict/css.dict -print_final_stats=1
+      - name: Report a report-only failure
+        # continue-on-error hides this job's failure in the run's result, so
+        # say it in the summary and as a warning annotation.
+        if: failure() && matrix.report_only == true
+        run: |
+          echo "::warning title=Fuzz $TARGET::found an input that breaks the invariant; reproducer in the fuzz-artifacts-$TARGET artifact"
+          {
+            echo "### Fuzz $TARGET: invariant broken (report-only)"
+            echo
+            echo "The reproducer is in the \`fuzz-artifacts-$TARGET\` artifact. Check it against fuzz/regressions/README.md: a new bug needs a reproducer there and, if it is a known Lightning CSS printer bug, a skip in fuzz/src/lib.rs."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload crash reproducers
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
