@@ -1488,16 +1488,24 @@ fn mentions(selector: &Selector<'_>, patterns: &[Pattern]) -> bool {
             })
 }
 
+/// Every selector in `rules`, at any depth, for [`PruneOutput`]'s count
+/// when a parent rule takes them with it.
 fn count_selectors<R>(rules: &CssRuleList<'_, R>) -> usize {
     rules
         .0
         .iter()
-        .map(|rule| match rule {
-            CssRule::Style(style) => style.selectors.0.len() + count_selectors(&style.rules),
-            CssRule::Nesting(nesting) => {
-                nesting.style.selectors.0.len() + count_selectors(&nesting.style.rules)
+        .map(|rule| {
+            if let Some(group) = rules::group_rules(rule) {
+                return count_selectors(group);
             }
-            _ => 0,
+            match rule {
+                CssRule::Style(style) => style.selectors.0.len() + count_selectors(&style.rules),
+                CssRule::Nesting(nesting) => {
+                    nesting.style.selectors.0.len() + count_selectors(&nesting.style.rules)
+                }
+                CssRule::LayerBlock(layer) => count_selectors(&layer.rules),
+                _ => 0,
+            }
         })
         .sum()
 }
@@ -1680,11 +1688,29 @@ mod tests {
     #[test]
     fn prune_should_count_nested_selectors_removed_with_their_parent() {
         let used = BTreeSet::from(["a"]);
-        let css = ".b{color:red;&:hover{color:red}& .c,& .d{color:red}@media print{color:red}}";
+        let css = ".b{color:red;&:hover{color:red}& .c,& .d{color:red}@media print{color:red;.e{color:red}}}";
         let removed = prune(css, &used, &PruneOptions::default())
             .map(|output| output.removed_selectors)
             .ok();
-        assert_eq!(removed, Some(4));
+        assert_eq!(removed, Some(5));
+    }
+
+    // Third review: `--stats` missed selectors inside at-rules nested in a
+    // removed rule.
+    #[rstest]
+    #[case::media(".b{color:red;@media print{.c,.d{color:red}}}", 3)]
+    #[case::supports(".b{color:red;@supports (color:red){.c{color:red}}}", 2)]
+    #[case::media_in_nested_rule(".b{& .c{@media print{.d{color:red}}}}", 3)]
+    #[case::layer(".b{@layer x{.c{color:red}}}", 2)]
+    fn prune_should_count_selectors_in_at_rules_removed_with_their_parent(
+        #[case] css: &str,
+        #[case] expected: usize,
+    ) {
+        let used = BTreeSet::from(["a"]);
+        let removed = prune(css, &used, &PruneOptions::default())
+            .map(|output| output.removed_selectors)
+            .ok();
+        assert_eq!(removed, Some(expected));
     }
 
     // The older `@nest` spelling of nesting.
