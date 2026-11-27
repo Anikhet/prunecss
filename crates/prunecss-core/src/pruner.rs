@@ -383,7 +383,7 @@ fn parse_sheet<'i>(
     css: &'i str,
     warnings: Option<WarningSink<'i>>,
 ) -> Result<StyleSheet<'i>, PruneError> {
-    if nesting_depth(css) > MAX_NESTING {
+    if exceeds_nesting(css, MAX_NESTING) {
         return Err(PruneError {
             kind: PruneErrorKind::Parse,
             message: format!("the stylesheet is nested more than {MAX_NESTING} levels deep"),
@@ -402,49 +402,402 @@ fn parse_sheet<'i>(
         .map_err(|err| PruneError::from_lightningcss(PruneErrorKind::Parse, &err))
 }
 
-/// The deepest nesting of `{`, `(` and `[` outside strings and comments.
-fn nesting_depth(css: &str) -> usize {
-    let bytes = css.as_bytes();
-    let (mut depth, mut deepest, mut i) = (0_usize, 0_usize, 0);
-    while i < bytes.len() {
-        match bytes[i] {
-            b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                i = css[i + 2..]
-                    .find("*/")
-                    .map_or(bytes.len(), |end| i + 2 + end + 1);
-            }
-            quote @ (b'"' | b'\'') => {
-                i += 1;
-                while i < bytes.len() && bytes[i] != quote && bytes[i] != b'\n' {
-                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+/// Whether `css` nests blocks (`{`, `(`, `[` and functions) more than
+/// `limit` levels deep, as the parser will see them.
+///
+/// This runs on every stylesheet, so it is a single linear pass that stops
+/// as soon as the limit is passed.
+fn exceeds_nesting(css: &str, limit: usize) -> bool {
+    let mut tokens = Tokenizer::new(css);
+    // Like the parser, a closing bracket only ends the innermost block when
+    // it matches; a stray `]` inside `f(` is just a token. Counting every
+    // closer would let `f(]f(]…` hide its depth.
+    let mut open: Vec<u8> = Vec::new();
+    while let Some(token) = tokens.next_token() {
+        match token {
+            Token::Open(close) => {
+                open.push(close);
+                if open.len() > limit {
+                    return true;
                 }
             }
-            b'\\' => i += 1,
-            // `url(` without a quote is a single token up to `)`, whatever
-            // it contains, exactly as the CSS tokenizer reads it.
-            b'(' if is_unquoted_url(bytes, i) => {
-                i += bytes[i..]
-                    .iter()
-                    .position(|&b| b == b')')
-                    .unwrap_or(bytes.len() - i);
+            Token::Close(close) if open.last() == Some(&close) => {
+                open.pop();
             }
-            b'{' | b'(' | b'[' => {
-                depth += 1;
-                deepest = deepest.max(depth);
-            }
-            b'}' | b')' | b']' => depth = depth.saturating_sub(1),
             _ => {}
         }
-        i += 1;
     }
-    deepest
+    false
 }
 
-/// Whether the `(` at `open` starts an unquoted `url(...)` token.
-fn is_unquoted_url(bytes: &[u8], open: usize) -> bool {
-    let is_url = open >= 3 && bytes[open - 3..open].eq_ignore_ascii_case(b"url");
-    let first = bytes[open + 1..].iter().find(|b| !b.is_ascii_whitespace());
-    is_url && !matches!(first, Some(b'"' | b'\''))
+/// What [`Tokenizer`] reports: only what decides the block structure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Token {
+    /// A block or function opens; the byte is the one that closes it.
+    Open(u8),
+    /// `)`, `]` or `}`.
+    Close(u8),
+    Semicolon,
+    /// Whitespace, a comment, `<!--` or `-->`.
+    Trivia,
+    /// Any other token.
+    Other,
+}
+
+/// A port of the token boundaries of `cssparser`'s tokenizer (CSS Syntax
+/// §4), which Lightning CSS parses with. It must agree with it exactly:
+/// where a string, comment or `url(` ends decides which brackets count, and
+/// any disagreement either hides nesting (a stack overflow) or invents it
+/// (a refused stylesheet). Newlines are `\n`, `\r\n`, `\r` and `\x0C`, as
+/// after the spec's preprocessing.
+struct Tokenizer<'a> {
+    css: &'a str,
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+const URL: [char; 3] = ['u', 'r', 'l'];
+
+impl<'a> Tokenizer<'a> {
+    fn new(css: &'a str) -> Self {
+        Self {
+            css,
+            bytes: css.as_bytes(),
+            pos: 0,
+        }
+    }
+
+    fn peek(&self, offset: usize) -> Option<u8> {
+        self.bytes.get(self.pos + offset).copied()
+    }
+
+    fn has_newline_at(&self, offset: usize) -> bool {
+        matches!(self.peek(offset), Some(b'\n' | b'\r' | b'\x0C'))
+    }
+
+    fn starts_with(&self, text: &[u8]) -> bool {
+        self.bytes
+            .get(self.pos..)
+            .is_some_and(|rest| rest.starts_with(text))
+    }
+
+    fn next_token(&mut self) -> Option<Token> {
+        let byte = self.peek(0)?;
+        let token = match byte {
+            b' ' | b'\t' | b'\n' | b'\r' | b'\x0C' => {
+                self.pos += 1;
+                Token::Trivia
+            }
+            b'"' | b'\'' => {
+                self.string(byte);
+                Token::Other
+            }
+            b'#' => {
+                self.pos += 1;
+                if self.is_ident_start() || matches!(self.peek(0), Some(b'0'..=b'9' | b'-')) {
+                    self.name();
+                }
+                Token::Other
+            }
+            b'(' => self.open(b')'),
+            b'[' => self.open(b']'),
+            b'{' => self.open(b'}'),
+            b')' | b']' | b'}' => {
+                self.pos += 1;
+                Token::Close(byte)
+            }
+            b';' => {
+                self.pos += 1;
+                Token::Semicolon
+            }
+            b'+' | b'-' | b'.' if self.starts_number() => self.numeric(),
+            b'-' if self.starts_with(b"-->") => {
+                self.pos += 3;
+                Token::Trivia
+            }
+            b'-' if self.is_ident_start() => self.ident_like(),
+            b'0'..=b'9' => self.numeric(),
+            b'/' if self.peek(1) == Some(b'*') => {
+                self.comment();
+                Token::Trivia
+            }
+            b'<' if self.starts_with(b"<!--") => {
+                self.pos += 4;
+                Token::Trivia
+            }
+            b'@' => {
+                self.pos += 1;
+                if self.is_ident_start() {
+                    self.name();
+                }
+                Token::Other
+            }
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'\0' => self.ident_like(),
+            b'\\' if !self.has_newline_at(1) => self.ident_like(),
+            _ if !byte.is_ascii() => self.ident_like(),
+            _ => {
+                self.pos += 1;
+                Token::Other
+            }
+        };
+        Some(token)
+    }
+
+    fn open(&mut self, close: u8) -> Token {
+        self.pos += 1;
+        Token::Open(close)
+    }
+
+    fn consume_newline(&mut self) {
+        let crlf = self.peek(0) == Some(b'\r') && self.peek(1) == Some(b'\n');
+        self.pos += if crlf { 2 } else { 1 };
+    }
+
+    fn is_ident_start(&self) -> bool {
+        match self.peek(0) {
+            Some(b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'\0') => true,
+            // cssparser checks the byte at offset 1 for `-\`, which is the
+            // backslash itself, so `-\` always starts an identifier there.
+            Some(b'-') => match self.peek(1) {
+                Some(b'a'..=b'z' | b'A'..=b'Z' | b'-' | b'_' | b'\0' | b'\\') => true,
+                Some(next) => !next.is_ascii(),
+                None => false,
+            },
+            Some(b'\\') => !self.has_newline_at(1),
+            Some(byte) => !byte.is_ascii(),
+            None => false,
+        }
+    }
+
+    fn starts_number(&self) -> bool {
+        let digit = |offset| self.peek(offset).is_some_and(|b: u8| b.is_ascii_digit());
+        match self.peek(0) {
+            Some(b'+' | b'-') => digit(1) || (self.peek(1) == Some(b'.') && digit(2)),
+            Some(b'.') => digit(1),
+            _ => false,
+        }
+    }
+
+    fn skip_digits(&mut self) {
+        while self.peek(0).is_some_and(|b| b.is_ascii_digit()) {
+            self.pos += 1;
+        }
+    }
+
+    fn numeric(&mut self) -> Token {
+        let digit = |this: &Self, offset| this.peek(offset).is_some_and(|b: u8| b.is_ascii_digit());
+        if matches!(self.peek(0), Some(b'+' | b'-')) {
+            self.pos += 1;
+        }
+        self.skip_digits();
+        if self.peek(0) == Some(b'.') && digit(self, 1) {
+            self.pos += 1;
+            self.skip_digits();
+        }
+        if matches!(self.peek(0), Some(b'e' | b'E'))
+            && (digit(self, 1) || (matches!(self.peek(1), Some(b'+' | b'-')) && digit(self, 2)))
+        {
+            self.pos += 2;
+            self.skip_digits();
+        }
+        if self.peek(0) == Some(b'%') {
+            self.pos += 1;
+        } else if self.is_ident_start() {
+            // A unit: `1url(` is a dimension followed by a parenthesis.
+            self.name();
+        }
+        Token::Other
+    }
+
+    /// Consumes a name and returns whether it reads `url`, ignoring ASCII
+    /// case, once escapes are decoded (`u\72l` is `url` too).
+    fn name(&mut self) -> bool {
+        let mut length = 0;
+        let mut is_url = true;
+        let mut push = |c: char| {
+            is_url = is_url && URL.get(length).is_some_and(|u| c.eq_ignore_ascii_case(u));
+            length += 1;
+        };
+        while let Some(byte) = self.peek(0) {
+            match byte {
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' => {
+                    self.pos += 1;
+                    push(char::from(byte));
+                }
+                b'\0' => {
+                    self.pos += 1;
+                    push(char::REPLACEMENT_CHARACTER);
+                }
+                b'\\' if !self.has_newline_at(1) => {
+                    self.pos += 1;
+                    push(self.escape());
+                }
+                _ if !byte.is_ascii() => {
+                    self.pos += 1;
+                    push(char::REPLACEMENT_CHARACTER);
+                }
+                _ => break,
+            }
+        }
+        is_url && length == URL.len()
+    }
+
+    /// Consumes an escape after its backslash, which is not followed by a
+    /// newline, and returns the character it stands for.
+    fn escape(&mut self) -> char {
+        let Some(byte) = self.peek(0) else {
+            return char::REPLACEMENT_CHARACTER;
+        };
+        if byte.is_ascii_hexdigit() {
+            let mut value = 0_u32;
+            let mut digits = 0;
+            while digits < 6 {
+                let Some(digit) = self.peek(0).and_then(|b| char::from(b).to_digit(16)) else {
+                    break;
+                };
+                value = value * 16 + digit;
+                digits += 1;
+                self.pos += 1;
+            }
+            // One whitespace after a hex escape belongs to it, newlines
+            // included: `"\41` + newline does not end the string.
+            match self.peek(0) {
+                Some(b' ' | b'\t') => self.pos += 1,
+                Some(b'\n' | b'\r' | b'\x0C') => self.consume_newline(),
+                _ => {}
+            }
+            return char::from_u32(value)
+                .filter(|c| *c != '\0')
+                .unwrap_or(char::REPLACEMENT_CHARACTER);
+        }
+        let c = self
+            .css
+            .get(self.pos..)
+            .and_then(|rest| rest.chars().next())
+            .unwrap_or(char::REPLACEMENT_CHARACTER);
+        self.pos += c.len_utf8().max(1);
+        if c == '\0' {
+            char::REPLACEMENT_CHARACTER
+        } else {
+            c
+        }
+    }
+
+    fn string(&mut self, quote: u8) {
+        self.pos += 1;
+        while let Some(byte) = self.peek(0) {
+            match byte {
+                _ if byte == quote => {
+                    self.pos += 1;
+                    return;
+                }
+                // An unescaped newline ends a (bad) string and is not part
+                // of it.
+                b'\n' | b'\r' | b'\x0C' => return,
+                b'\\' => {
+                    self.pos += 1;
+                    if self.has_newline_at(0) {
+                        self.consume_newline();
+                    } else if self.peek(0).is_some() {
+                        self.escape();
+                    }
+                }
+                _ => self.pos += 1,
+            }
+        }
+    }
+
+    fn comment(&mut self) {
+        self.pos += 2;
+        self.pos = self
+            .css
+            .get(self.pos..)
+            .and_then(|rest| rest.find("*/"))
+            .map_or(self.bytes.len(), |end| self.pos + end + 2);
+    }
+
+    fn ident_like(&mut self) -> Token {
+        let is_url = self.name();
+        if self.peek(0) != Some(b'(') {
+            return Token::Other;
+        }
+        self.pos += 1;
+        if is_url && self.unquoted_url() {
+            Token::Other
+        } else {
+            Token::Open(b')')
+        }
+    }
+
+    /// After `url(`: consumes an unquoted URL token and returns `true`, or
+    /// returns `false` without consuming anything when a quote follows,
+    /// which makes `url(` an ordinary function.
+    fn unquoted_url(&mut self) -> bool {
+        let rest = self.bytes.get(self.pos..).unwrap_or_default();
+        let blank = rest
+            .iter()
+            .take_while(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0C'))
+            .count();
+        match rest.get(blank) {
+            Some(b'"' | b'\'') => return false,
+            None => {
+                self.pos = self.bytes.len();
+                return true;
+            }
+            Some(_) => self.pos += blank,
+        }
+        while let Some(byte) = self.peek(0) {
+            match byte {
+                b')' => {
+                    self.pos += 1;
+                    return true;
+                }
+                b' ' | b'\t' | b'\n' | b'\r' | b'\x0C' => {
+                    self.url_end();
+                    return true;
+                }
+                b'\x01'..=b'\x08' | b'\x0B' | b'\x0E'..=b'\x1F' | b'\x7F' | b'"' | b'\'' | b'(' => {
+                    self.pos += 1;
+                    self.bad_url();
+                    return true;
+                }
+                b'\\' => {
+                    self.pos += 1;
+                    if self.has_newline_at(0) {
+                        self.bad_url();
+                        return true;
+                    }
+                    self.escape();
+                }
+                _ => self.pos += 1,
+            }
+        }
+        true
+    }
+
+    /// Whitespace inside an unquoted URL: only `)` may follow.
+    fn url_end(&mut self) {
+        while let Some(byte) = self.peek(0) {
+            self.pos += 1;
+            match byte {
+                b')' => return,
+                b' ' | b'\t' | b'\n' | b'\r' | b'\x0C' => {}
+                _ => return self.bad_url(),
+            }
+        }
+    }
+
+    /// The rest of a broken URL, up to an unescaped `)`.
+    fn bad_url(&mut self) {
+        while let Some(byte) = self.peek(0) {
+            self.pos += 1;
+            match byte {
+                b')' => return,
+                b'\\' if matches!(self.peek(0), Some(b')' | b'\\')) => self.pos += 1,
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Browser versions old enough that the printer keeps widely supported
@@ -1677,6 +2030,64 @@ mod tests {
         assert!(prune(&css, &BTreeSet::from(["a"]), &PruneOptions::default()).is_ok());
     }
 
+    /// Runs `prune` on a thread with a modest stack, so a stack overflow
+    /// shows up as this test binary aborting rather than passing by luck on
+    /// a big main-thread stack.
+    fn prune_on_small_stack(css: String) -> Result<PruneOutput, PruneError> {
+        std::thread::Builder::new()
+            .stack_size(4 * 1024 * 1024)
+            .spawn(move || prune(&css, &BTreeSet::from(["a"]), &PruneOptions::default()))
+            .unwrap_or_else(|err| panic!("could not spawn: {err}"))
+            .join()
+            .unwrap_or_else(|_| panic!("prune panicked"))
+    }
+
+    fn deep(prefix: &str, open: &str, close: &str) -> String {
+        format!(
+            "{prefix}{}color:red{}",
+            open.repeat(20_000),
+            close.repeat(20_000)
+        )
+    }
+
+    // Third review: the pre-check must read strings, escapes, comments and
+    // `url(` exactly as the CSS tokenizer does, or deep input slips past it
+    // and overflows the stack.
+    #[rstest]
+    #[case::bad_string_ended_by_cr(deep("@x '\r;", ".a{", "}"))]
+    #[case::bad_string_ended_by_form_feed(deep("@x '\x0c;", ".a{", "}"))]
+    #[case::bad_string_ended_by_crlf(deep("@x \"\r\n;", ".a{", "}"))]
+    #[case::bad_string_then_is(deep("@x '\r;", ":is(", ")"))]
+    #[case::bad_string_then_media(deep("@x '\r;", "@media print{", "}"))]
+    #[case::escaped_quote_in_string(deep("@x 'a\\'b' ;", ".a{", "}"))]
+    #[case::escaped_newline_in_string(deep("@x 'a\\\r\nb' ;", ".a{", "}"))]
+    #[case::hex_escape_eats_newline(deep("@x 'a\\41\n}}}}' ;", ".a{", "}"))]
+    #[case::comment_with_quote(deep("/* ' */", ".a{", "}"))]
+    #[case::quote_then_comment(deep("@x \"/*\" ;", ".a{", "}"))]
+    #[case::identifier_ending_in_url(deep(".a{b:xurl(", "[", "]"))]
+    #[case::hash_url(deep(".a{b:#url(", "[", "]"))]
+    #[case::dimension_url(deep(".a{b:1url(", "[", "]"))]
+    #[case::escaped_url_with_quote(deep(".a{b:u\\72l(x\")", ".a{", "}"))]
+    #[case::url_with_escaped_paren(deep(".a{b:url(x\\))", ".a{", "}"))]
+    #[case::mismatched_closers(deep(".a{b:", "f(]", ")"))]
+    #[case::cdo_before_url(deep("<!--url(x)", ".a{", "}"))]
+    fn prune_should_refuse_deep_nesting_however_it_is_disguised(#[case] css: String) {
+        let err = prune_on_small_stack(css).err();
+        assert_eq!(
+            err.map(|err| err.message().contains("nested more than")),
+            Some(true)
+        );
+    }
+
+    #[rstest]
+    #[case::brackets_in_strings(r#".a{content:"((([[[{{{"}"#.repeat(200))]
+    #[case::escaped_quotes(r#".a{content:"\"(\""}"#.repeat(200))]
+    #[case::brackets_in_comments(".a{color:red}/* ((( */".repeat(200))]
+    #[case::unquoted_url_with_escaped_paren(r".a{b:url(x\)(()}".repeat(200))]
+    fn prune_should_not_count_brackets_the_tokenizer_ignores(#[case] css: String) {
+        assert_eq!(prune_on_small_stack(css).map(|_| ()), Ok(()));
+    }
+
     #[test]
     fn prune_should_accept_ordinary_nesting_depth() {
         let css = format!(
@@ -1734,6 +2145,30 @@ mod tests {
 
         fn used_names() -> impl Strategy<Value = Vec<&'static str>> {
             prop::sample::subsequence(vec!["a", "b", "c"], 0..=3)
+        }
+
+        /// Text the tokenizer treats specially, to disguise deep nesting.
+        fn tricky_prefix() -> impl Strategy<Value = String> {
+            let piece = prop::sample::select(vec![
+                "'", "\"", "\r", "\n", "\x0c", "\r\n", "\\", "/*", "*/", "url(", "xurl(", "#url(",
+                "u\\72l(", "1url(", "<!--", "-->", ")", "]", "}", "(", "[", "{", ";", "@x ",
+                ":is(", " ", "a", "\\41", "é",
+            ]);
+            prop::collection::vec(piece, 0..8).prop_map(|pieces| pieces.concat())
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(64))]
+            // Whatever precedes it, deep nesting is refused or harmless:
+            // never a stack overflow.
+            #[test]
+            fn prune_never_overflows_the_stack(
+                prefix in tricky_prefix(),
+                nesting in prop::sample::select(vec![(".a{", "}"), (":is(", ")"), ("@media print{", "}"), ("[", "]")]),
+            ) {
+                let css = format!("{prefix}{}x{}", nesting.0.repeat(5_000), nesting.1.repeat(5_000));
+                let _ = prune_on_small_stack(css);
+            }
         }
 
         proptest! {
