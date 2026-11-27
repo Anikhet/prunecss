@@ -247,9 +247,9 @@ review.
 
 **The maintainer builds prunecss with AI assistance.** Much of the code is
 written together with Claude Code, an AI coding tool. The project's
-instructions for AI agents are in [AGENTS.md](AGENTS.md), and commits it helped with
-carry a `Co-Authored-By` line. I review every change, and every change must
-pass the same tests, lints and checks described above.
+instructions for AI agents are in [AGENTS.md](AGENTS.md). I review every
+change, and every change must pass the same tests, lints and checks
+described above.
 
 So AI tools are welcome here. These rules apply to everyone:
 
