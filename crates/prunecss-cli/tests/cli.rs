@@ -1144,3 +1144,63 @@ fn parent_config_output_should_not_redirect_stylesheets_given_on_the_command_lin
     assert_eq!(stdout(&output), ".a{color:red}", "{}", stderr(&output));
     assert!(!dir.path().join("redirected.css").exists());
 }
+
+fn at_rule_project() -> tempfile::TempDir {
+    project(&[
+        ("i.html", r#"<p class="a">"#),
+        (
+            "s.css",
+            ":root{--brand:red}@keyframes spin{to{opacity:0}}.a{color:red}",
+        ),
+    ])
+}
+
+#[test]
+fn safelist_keyframes_should_keep_unused_keyframes() {
+    let dir = at_rule_project();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "s.css",
+            "-c",
+            "i.html",
+            "--minify",
+            "--keyframes",
+            "--safelist-keyframes",
+            "spin",
+        ],
+        None,
+    );
+    assert_eq!(
+        stdout(&output),
+        ":root{--brand:red}@keyframes spin{to{opacity:0}}.a{color:red}",
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn safelist_variables_should_keep_unused_custom_properties() {
+    let dir = at_rule_project();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "s.css",
+            "-c",
+            "i.html",
+            "--minify",
+            "--variables",
+            "--safelist-variables",
+            "brand",
+        ],
+        None,
+    );
+    assert_eq!(
+        stdout(&output),
+        ":root{--brand:red}@keyframes spin{to{opacity:0}}.a{color:red}",
+        "{}",
+        stderr(&output)
+    );
+}

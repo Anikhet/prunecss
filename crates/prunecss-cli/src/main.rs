@@ -116,6 +116,13 @@ struct PruneArgs {
     /// Keep matching selectors and every rule nested inside them.
     #[arg(long, value_name = "PATTERN", value_parser = Pattern::parse, help_heading = "Safelist")]
     safelist_deep: Vec<Pattern>,
+    /// Never remove matching @keyframes (with --keyframes).
+    #[arg(long, value_name = "PATTERN", value_parser = Pattern::parse, help_heading = "Safelist")]
+    safelist_keyframes: Vec<Pattern>,
+    /// Never remove matching custom properties, written without `--` (with
+    /// --variables).
+    #[arg(long, value_name = "PATTERN", value_parser = Pattern::parse, help_heading = "Safelist")]
+    safelist_variables: Vec<Pattern>,
 
     /// Also remove @keyframes that nothing uses.
     #[arg(long, overrides_with = "no_keyframes", help_heading = AT_RULES)]
@@ -286,6 +293,8 @@ fn prune_settings(args: PruneArgs, loaded: &Loaded) -> Result<PruneSettings> {
     safelist.standard.extend(args.safelist);
     safelist.greedy.extend(args.safelist_greedy);
     safelist.deep.extend(args.safelist_deep);
+    safelist.keyframes.extend(args.safelist_keyframes);
+    safelist.variables.extend(args.safelist_variables);
 
     let options = PruneOptions::default()
         .minify(flag(args.minify, args.no_minify, config.minify))
