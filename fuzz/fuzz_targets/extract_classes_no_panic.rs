@@ -1,6 +1,7 @@
 //! `extract_classes` never panics, and every name it returns is non-empty,
 //! has no ASCII whitespace, and is either borrowed from the input or (only
-//! when the input has an `&`) an owned name found after decoding entities.
+//! when the input has an `&` or a `\`) an owned name found after decoding
+//! HTML entities or JavaScript escapes.
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
@@ -24,9 +25,13 @@ fuzz_target!(|data: &[u8]| {
                     "class name {name:?} is not a slice of the input"
                 );
             }
-            // Owned names only come from decoding HTML entities.
+            // Owned names only come from decoding HTML entities (`&`) or
+            // JavaScript escapes such as `\x2d` (`\`).
             std::borrow::Cow::Owned(_) => {
-                assert!(source.contains('&'), "owned name {name:?} without any entity");
+                assert!(
+                    source.contains(['&', '\\']),
+                    "owned name {name:?} without any entity or escape"
+                );
             }
         }
     }
