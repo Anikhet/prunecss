@@ -373,19 +373,40 @@ pub fn prune(
 struct Legacy {
     /// The name after the colon(s), in lower case.
     name: &'static str,
-    /// Whether it is a pseudo-element (`::`) rather than a pseudo-class.
-    pseudo_element: bool,
+    /// After `::` (pseudo-element), `:` (pseudo-class), or either.
+    position: Colons,
     /// The start of its mask; digits fill the rest.
     mask_prefix: &'static str,
 }
 
-/// Lightning CSS reads `::-ms-input-placeholder` as `::-moz-placeholder`,
-/// and after parsing the two can't be told apart.
-const LEGACY_NAMES: [Legacy; 1] = [Legacy {
-    name: "-ms-input-placeholder",
-    pseudo_element: true,
-    mask_prefix: "-pcss-ms-",
-}];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Colons {
+    One,
+    Either,
+}
+
+/// - `::-ms-input-placeholder` (IE/Edge pseudo-element) is read as
+///   `::-moz-placeholder`, and after parsing the two can't be told apart.
+/// - The pseudo-classes `:-ms-input-placeholder` (IE 10-11) and
+///   `:-moz-placeholder` (Firefox 4-18) are read as prefixed
+///   `:placeholder-shown` and would print as `:-ms-placeholder-shown` /
+///   `:-moz-placeholder-shown`, which no browser supports. Masking the
+///   text reaches every position, `:nth-child(… of …)` included, which
+///   [`repair_selector`] cannot rebuild.
+///
+/// `::-moz-placeholder` is read correctly and is left alone.
+const LEGACY_NAMES: [Legacy; 2] = [
+    Legacy {
+        name: "-ms-input-placeholder",
+        position: Colons::Either,
+        mask_prefix: "-pcss-ms-",
+    },
+    Legacy {
+        name: "-moz-placeholder",
+        position: Colons::One,
+        mask_prefix: "-pcss-moz-",
+    },
+];
 
 /// The masks used for one stylesheet, to undo with [`Masks::unmask`].
 #[derive(Debug, Default)]
@@ -441,7 +462,7 @@ fn legacy_name_starts(css: &str, legacy: &Legacy) -> Vec<usize> {
         .map(|(colon, _)| colon + 1)
         .filter(|&start| {
             let is_element = start >= 2 && bytes.get(start - 2) == Some(&b':');
-            is_element == legacy.pseudo_element
+            (legacy.position == Colons::Either || !is_element)
                 && bytes
                     .get(start..start + legacy.name.len())
                     .is_some_and(|name| name.eq_ignore_ascii_case(legacy.name.as_bytes()))
@@ -1033,8 +1054,21 @@ fn collect_selector_names(selector: &Selector<'_>, names: &mut BTreeSet<String>)
 /// would print `:-moz-placeholder-shown` / `:-ms-placeholder-shown`, which no
 /// browser supports. Those prefixed forms can only come from these two
 /// spellings, so they are turned back into exactly what was written.
+///
+/// [`mask_legacy_names`] already hides the plain spellings from the
+/// parser; this catches escaped ones such as `:-moz-place\68 older`, in
+/// every position it can reach. (It cannot reach `:nth-child(… of …)`:
+/// Lightning CSS offers no way to change those selectors.)
 fn repair_legacy_pseudo_classes<R>(rules: &mut CssRuleList<'_, R>) {
     for rule in &mut rules.0 {
+        if let CssRule::Scope(scope) = rule {
+            for list in [&mut scope.scope_start, &mut scope.scope_end]
+                .into_iter()
+                .flatten()
+            {
+                list.0.iter_mut().for_each(repair_selector);
+            }
+        }
         if let Some(group) = rules::group_rules_mut(rule) {
             repair_legacy_pseudo_classes(group);
             continue;
@@ -1989,8 +2023,44 @@ mod tests {
     // Second review: Lightning CSS reads this as `::-moz-placeholder`.
     #[case::ms_pseudo_element("input::-ms-input-placeholder{color:red}")]
     #[case::standard_unchanged("input:placeholder-shown{color:red}")]
+    // Third review: positions the repair did not reach.
+    #[case::nth_child_of("input:nth-child(2 of input:-moz-placeholder){color:red}")]
+    #[case::nth_last_child_of("input:nth-last-child(2 of :-ms-input-placeholder){color:red}")]
+    #[case::upper_case("input:-MOZ-PLACEHOLDER{color:red}")]
+    #[case::followed_by_hover("input:-moz-placeholder:hover{color:red}")]
     fn prune_should_print_legacy_placeholder_selectors_as_written(#[case] css: &str) {
-        assert_eq!(prune_min(css, &[]), css);
+        assert_eq!(prune_min(css, &[]), css.to_ascii_lowercase());
+    }
+
+    #[rstest]
+    #[case::scope_start(
+        "@scope (input:-moz-placeholder){.a{color:red}}",
+        "@scope(input:-moz-placeholder){.a{color:red}}"
+    )]
+    #[case::scope_end(
+        "@scope (.a) to (input:-ms-input-placeholder){.a{color:red}}",
+        "@scope(.a) to (input:-ms-input-placeholder){.a{color:red}}"
+    )]
+    fn prune_should_print_legacy_placeholders_in_scope_preludes_as_written(
+        #[case] css: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(prune_min(css, &["a"]), expected);
+    }
+
+    // Escaped spellings are not masked; the selector repair still fixes
+    // them wherever it can reach.
+    #[rstest]
+    #[case::selector(
+        r"input:-moz-place\68 older{color:red}",
+        "input:-moz-placeholder{color:red}"
+    )]
+    #[case::scope(
+        r"@scope (input:-moz-place\68 older){.a{color:red}}",
+        "@scope(input:-moz-placeholder){.a{color:red}}"
+    )]
+    fn prune_should_repair_escaped_legacy_placeholders(#[case] css: &str, #[case] expected: &str) {
+        assert_eq!(prune_min(css, &["a"]), expected);
     }
 
     // Third review: pseudo-element names ignore ASCII case, and the hiding
