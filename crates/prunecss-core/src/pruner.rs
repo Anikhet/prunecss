@@ -1734,7 +1734,7 @@ mod tests {
         assert_eq!(removed, Some(5));
     }
 
-    // Third review: `--stats` missed selectors inside at-rules nested in a
+    // Regression: `--stats` missed selectors inside at-rules nested in a
     // removed rule.
     #[rstest]
     #[case::media(".b{color:red;@media print{.c,.d{color:red}}}", 3)]
@@ -2202,7 +2202,7 @@ mod tests {
         assert_eq!(prune_with(css, &[], &options).css, css);
     }
 
-    // Found in the pre-release review: readers outside style rules.
+    // Regression: readers outside style rules.
     #[rstest]
     #[case::container_style_query(
         ":root{--theme:dark}@container style(--theme: dark){.x{color:red}}"
@@ -2279,10 +2279,10 @@ mod tests {
     #[case::nested("input{color:red;&:-ms-input-placeholder{color:red}}")]
     #[case::in_media("@media print{input:-moz-placeholder{color:red}}")]
     #[case::pseudo_element_unchanged("input::-moz-placeholder{color:red}")]
-    // Second review: Lightning CSS reads this as `::-moz-placeholder`.
+    // Regression: Lightning CSS reads this as `::-moz-placeholder`.
     #[case::ms_pseudo_element("input::-ms-input-placeholder{color:red}")]
     #[case::standard_unchanged("input:placeholder-shown{color:red}")]
-    // Third review: positions the repair did not reach.
+    // Regression: positions the repair did not reach.
     #[case::nth_child_of("input:nth-child(2 of input:-moz-placeholder){color:red}")]
     #[case::nth_last_child_of("input:nth-last-child(2 of :-ms-input-placeholder){color:red}")]
     #[case::upper_case("input:-MOZ-PLACEHOLDER{color:red}")]
@@ -2322,7 +2322,7 @@ mod tests {
         assert_eq!(prune_min(css, &["a"]), expected);
     }
 
-    // Third review: pseudo-element names ignore ASCII case, and the hiding
+    // Regression: pseudo-element names ignore ASCII case, and the hiding
     // place must not rewrite text the stylesheet already contains.
     #[rstest]
     #[case::upper_case(
@@ -2372,7 +2372,7 @@ mod tests {
         );
     }
 
-    // Pre-release review: reprinting must not modernise values that older
+    // Regression: reprinting must not modernise values that older
     // browsers can't read (8-digit hex breaks IE11, old Safari and Edge).
     #[rstest]
     #[case::rgba(".a{color:rgba(0,0,0,.5)}", ".a{color:rgba(0,0,0,.5)}")]
@@ -2395,7 +2395,7 @@ mod tests {
         assert!(prune_min(css, &["a"]).starts_with(r#"@charset "UTF-8";"#));
     }
 
-    // Second review: a byte-order mark (Sass adds one) must not end up in
+    // Regression: a byte-order mark (Sass adds one) must not end up in
     // the first selector.
     #[rstest]
     #[case::bom_only("\u{feff}.a{color:red}", ".a{color:red}")]
@@ -2412,7 +2412,7 @@ mod tests {
         assert_eq!(prune_min(".a{color:red}", &["a"]), ".a{color:red}");
     }
 
-    // Pre-release review: rules the parser rejects are dropped. That must
+    // Regression: rules the parser rejects are dropped. That must
     // be reported, never silent.
     #[rstest]
     #[case::shadow_piercing_combinator(".x >>> .y{color:red}")]
@@ -2429,7 +2429,7 @@ mod tests {
         );
     }
 
-    // Second review: Lightning CSS also warns about rules it keeps as
+    // Regression: Lightning CSS also warns about rules it keeps as
     // written; those are not dropped and must not look like it.
     #[rstest]
     #[case::unknown_at_rule("@tailwind base;.x{color:red}")]
@@ -2451,7 +2451,7 @@ mod tests {
         }
     }
 
-    // Third review: `dropped` must say whether the rule disappeared, not
+    // Regression: `dropped` must say whether the rule disappeared, not
     // guess from the error kind. Lightning CSS reports an empty at-rule
     // prelude as "unexpected end of input" and drops the rule; it reports
     // an invalid media feature as "invalid media query" and keeps it.
@@ -2505,7 +2505,7 @@ mod tests {
         assert_eq!(output.map(|output| output.warnings.len()).ok(), Some(0));
     }
 
-    // Pre-release review: `&` in a nested rule matches like `:is(list)`, so
+    // Regression: `&` in a nested rule matches like `:is(list)`, so
     // its specificity is that of the parent list's most specific selector.
     // Removing that one would make `& .c` lose to rules it used to beat.
     #[test]
@@ -2528,7 +2528,7 @@ mod tests {
         assert_eq!(prune_min(css, &["a", "c"]), "#a{& .c{color:red}}");
     }
 
-    // Third review: `&` cannot match pseudo-elements, so a parent with one
+    // Regression: `&` cannot match pseudo-elements, so a parent with one
     // adds nothing to `&`'s specificity and need not be kept for it...
     #[test]
     fn prune_should_not_keep_a_pseudo_element_parent_for_nesting_specificity() {
@@ -2552,7 +2552,7 @@ mod tests {
         assert_eq!(prune_min(".a,#gone{color:red}", &["a"]), ".a{color:red}");
     }
 
-    // Pre-release review: deep nesting overflowed the stack and aborted.
+    // Regression: deep nesting overflowed the stack and aborted.
     #[rstest]
     #[case::functional_pseudo_classes(format!("{}.a{}{{color:red}}", ":is(".repeat(3000), ")".repeat(3000)))]
     #[case::grouping_rules(format!("{}.a{{color:red}}{}", "@media print{".repeat(10_000), "}".repeat(10_000)))]
@@ -2563,7 +2563,7 @@ mod tests {
         assert!(err.is_some_and(|err| err.message().contains("nested more than")));
     }
 
-    // Second review: an unquoted url() is one token, even with quotes or
+    // Regression: an unquoted url() is one token, even with quotes or
     // parentheses inside it, so it can neither hide nesting nor add to it.
     #[test]
     fn prune_should_count_nesting_after_an_unquoted_url_with_a_quote() {
@@ -2606,7 +2606,7 @@ mod tests {
         )
     }
 
-    // Third review: the pre-check must read strings, escapes, comments and
+    // Regression: the pre-check must read strings, escapes, comments and
     // `url(` exactly as the CSS tokenizer does, or deep input slips past it
     // and overflows the stack.
     #[rstest]
@@ -2678,7 +2678,7 @@ mod tests {
         )
     }
 
-    // Third review: 100 levels of `@media` overflowed the 2 MiB stack that
+    // Regression: 100 levels of `@media` overflowed the 2 MiB stack that
     // `cargo test` and spawned threads get by default, in debug builds.
     // The allowed depth must be safe there, with every option on.
     #[rstest]
