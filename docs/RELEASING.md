@@ -112,7 +112,11 @@ Repository Settings, Environments, New environment, name it exactly
   tags" and add `main`. Only workflows running on `main` can then use it.
 - Optional but recommended: add yourself under **Required reviewers**. Every
   publish then waits for you to click "Approve" in the Actions run, which is a
-  last chance to stop a release.
+  last chance to stop a release. Ordinary merges do not ask: a first job,
+  **Release-plz check**, runs without the environment and starts the gated
+  **Release-plz release** job only when the workspace version has no
+  `prunecss-core-vX.Y.Z` or `prunecss-vX.Y.Z` tag yet, that is after a
+  release PR is merged or after a publish that stopped halfway.
 
 ### 6. Turn on Trusted Publishing on crates.io
 
@@ -226,9 +230,11 @@ Before merging:
 When `CI success` is green, merge the release PR. Then watch the
 **Release-plz** run under Actions:
 
-1. **Release-plz release** waits for your approval if you added a required
-   reviewer to the `release` environment. Then it publishes `prunecss-core`
-   and `prunecss`, pushes the two tags and creates the two GitHub releases.
+1. **Release-plz check** sees that the new version is not tagged yet.
+   **Release-plz release** then waits for your approval if you added a
+   required reviewer to the `release` environment, publishes
+   `prunecss-core` and `prunecss`, pushes the two tags and creates the two
+   GitHub releases.
 2. **Release binaries** then builds the CLI for:
 
    | Target | Built on |

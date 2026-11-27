@@ -15,12 +15,51 @@ on: # zizmor: ignore[concurrency-limits]
 permissions: {}
 
 jobs:
+  # Decides whether there is anything to publish, outside the `release`
+  # environment. Without this, every push to `main` would start the
+  # environment-gated job below and wait for a required reviewer even though
+  # release-plz then publishes nothing.
+  release-plz-check:
+    name: Release-plz check
+    # Forks have neither the crates.io trust nor the environment.
+    if: github.repository_owner == 'Anikhet'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # read Cargo.toml and the release tags
+    outputs:
+      unreleased: ${{ steps.tags.outputs.unreleased }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history includes every tag.
+          fetch-depth: 0
+          persist-credentials: false
+      # Both crates share the workspace version. A merged release PR bumps it,
+      # and release-plz tags each crate once it is published, so a missing tag
+      # means there is something to release (or a release that stopped
+      # halfway and should be retried).
+      - name: Check whether the workspace version is tagged
+        id: tags
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          unreleased=false
+          for tag in "prunecss-core-v$version" "prunecss-v$version"; do
+            if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+              echo "$tag exists"
+            else
+              echo "$tag is missing"
+              unreleased=true
+            fi
+          done
+          echo "unreleased=$unreleased" >> "$GITHUB_OUTPUT"
+
   # Publishes the crates, tags them and creates GitHub releases, but only when
   # the commit on `main` is a merged release PR (`release_always = false`).
   release-plz-release:
     name: Release-plz release
-    # Forks have neither the crates.io trust nor the environment.
-    if: github.repository_owner == 'Anikhet'
+    needs: release-plz-check
+    if: needs.release-plz-check.outputs.unreleased == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The crates.io trusted publisher is bound to this environment, so other
