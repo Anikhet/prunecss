@@ -37,9 +37,15 @@ From `results/2026-11-26-vm.md` (prunecss commit `a66faef`, PurgeCSS 9.1.0):
 |---|---|
 | Wall time | **5.4–24.4× faster** (median 9.0×) across 7 corpora |
 | vs PurgeCSS's JS API in a warm process | 2.3–5.7× faster (median 3.9×), for prunecss's whole CLI run |
-| Peak memory | PurgeCSS used 1.5–8.1× more |
-| Possible false removals (static DOM) | **prunecss 0 on every corpus**; PurgeCSS 376 on Tailwind (default extractor), 1 with the Tailwind extractor, 6 on the edge cases |
-| Output size | PurgeCSS is smaller: about the same on Bootstrap (114.1 vs 114.9 kB), larger gaps on Bulma and Tailwind, mostly tag/attribute selectors prunecss always keeps; brotli sizes are within 0.1–2.7 kB |
+| Peak memory | PurgeCSS used 1.5–8.1× as much |
+| Possible false removals (static DOM) | **prunecss 0 on every corpus**; PurgeCSS 376 on Tailwind (default extractor), 1 with the Tailwind extractor, 5 on the edge cases (see the note below) |
+| Output size | PurgeCSS is smaller, mostly because prunecss always keeps tag/attribute selectors. prunecss's extra bytes, minified / gzip / brotli: Bootstrap 0.8 / 0.2 / 0.2 kB, Bulma 65.6 / 5.7 / 0.1 kB, Tailwind 30.0 / 3.9 / 2.7 kB (2.8 / 0.7 / 0.6 kB against the Tailwind extractor), synthetic corpora up to 40.4 / 5.0 / 4.2 kB |
+
+The committed run predates a fix to the false-removal count: `run.mjs` then
+counted PurgeCSS's trimmed `:is()` list (`:is(.alert, .toast) .close` printed
+as `.alert .close`, which is correct) as a removal, so the results file says 6
+for the edge cases. The JSON's examples show the other 5 are escaped Tailwind
+names. `run.mjs` now counts trimmed `:is()`/`:where()` lists as rewritten.
 
 Rust micro-benchmarks are separate and need no corpus:
 
@@ -93,7 +99,10 @@ fails quietly cannot look fast.
    - **kept but unmatched** = kept, matches nothing statically. An upper
      bound on leftover CSS: it includes CSS for classes JavaScript adds.
    The oracle is a lower bound on what a page needs. It cannot see classes
-   added at runtime, Astro/Jekyll templating, or JSX expressions. A browser
+   added at runtime, Astro/Jekyll templating, or JSX expressions. It also
+   reads only `class` attributes: a class set only through `className`,
+   Vue `:class`, Svelte `class:` or `classList.add` counts as unused, so
+   removing its rules is not flagged. A browser
    coverage run (Playwright) would be the next step; it is not here yet.
 
 ## Corpora
@@ -130,8 +139,10 @@ The committed results come from a shared, noisy cloud VM and are
 - Fix the CPU frequency: `sudo cpupower frequency-set -g performance`.
 - Disable turbo: `echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo`
   (Intel) or `echo 0 | sudo tee /sys/devices/system/cpu/cpufreq/boost` (AMD).
-- Pin to the same cores for every tool, e.g. `taskset -c 2,3 make -C bench`.
-  prunecss is currently single-threaded and PurgeCSS mostly is too.
+- Pin to the same cores for every tool, e.g. `taskset -c 2,3 make -C bench`,
+  and say how many. prunecss reads and scans content files on all the cores
+  it is given (rayon); PurgeCSS mostly uses one, so the core count changes
+  the ratio.
 - Put the repo on local SSD or tmpfs, not a network/overlay filesystem.
 - Run twice, on two machines if you can (x86 Linux and Apple Silicon); quote
   ranges ("X–Y× across N corpora, median Z×"), never a single best case.

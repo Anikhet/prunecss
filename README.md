@@ -15,8 +15,8 @@ never match.
   <img alt="Wall time to prune: prunecss 18 ms vs PurgeCSS 237 ms on Bootstrap, 36 vs 320 ms on Bulma, 156 vs 851 ms on Tailwind" src="assets/benchmark.svg" width="720">
 </p>
 
-- **5–24× faster than the PurgeCSS CLI** (median 9×), with 1.5–8× less memory.
-  See [BENCHMARKS.md](BENCHMARKS.md).
+- **5–24× faster than the PurgeCSS CLI** (median 9×), with 1.5–8× less memory,
+  measured at commit `a66faef`. See [BENCHMARKS.md](BENCHMARKS.md).
 - **Errs on the side of keeping CSS.** On the benchmark corpora prunecss
   removed nothing a static page needs; PurgeCSS's default extractor removed
   376 such rules on Tailwind.

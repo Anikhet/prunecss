@@ -105,8 +105,9 @@ The API is still 0.x and may change between minor versions.
 
 `prunecss prune --check` exits with `1` when it would remove anything and
 `0` when nothing is unused, without writing files. Add `--json` for a
-machine-readable report. Any error, including content patterns that match
-no files, exits with `2`.
+machine-readable report. Any error exits with `2`, including content
+patterns that together match no files at all. A single pattern that matches
+nothing, next to others that do, only prints a warning.
 
 ## Does it send anything over the network?
 

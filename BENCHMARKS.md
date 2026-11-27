@@ -10,15 +10,16 @@ harness, the pinned corpora and the raw data are in [`bench/`](bench/);
 ## Summary
 
 Latest run: [results/2026-11-26-vm.md](bench/results/2026-11-26-vm.md),
-7 corpora, 10 timed runs each after 3 warm-ups.
+7 corpora, 10 timed runs each after 3 warm-ups, prunecss at commit
+`a66faef`.
 
 | | prunecss compared with the PurgeCSS CLI |
 |---|---|
 | Wall time | **5.4–24.4× faster** (median 9.0×) |
 | vs PurgeCSS's JS API in a warm process | 2.3–5.7× faster (median 3.9×), for prunecss's whole CLI run |
-| Peak memory | PurgeCSS used 1.5–8.1× more |
-| Possible false removals (static DOM) | **prunecss 0 on every corpus**; PurgeCSS 376 on Tailwind with its default extractor, 1 with the Tailwind extractor |
-| Output size | PurgeCSS's output is smaller, mostly because prunecss always keeps tag and attribute selectors; compressed sizes are within 0.1–2.7 kB |
+| Peak memory | PurgeCSS used 1.5–8.1× as much |
+| Possible false removals (static DOM) | **prunecss 0 on every corpus**; PurgeCSS 376 on Tailwind with its default extractor, 1 with the Tailwind extractor, 5 on the hand-written edge cases |
+| Output size | PurgeCSS's output is smaller, mostly because prunecss always keeps tag and attribute selectors. prunecss's extra bytes after brotli: 0.2 kB on Bootstrap, 0.1 kB on Bulma, 2.7 kB on Tailwind, up to 4.2 kB on the synthetic corpora; after gzip: 0.2, 5.7, 3.9 and up to 5.0 kB |
 
 ## How to read these numbers
 
