@@ -264,7 +264,8 @@ impl<'a> Iterator for Tokens<'a> {
 ///
 /// `.modal` (a selector string) also yields `modal`, `active:` (an object
 /// key) yields `active`, `class:active` (Svelte) and `styles.button` (CSS
-/// modules) yield `active` and `button`. Extra candidates cost nothing.
+/// modules) yield `active` and `button`, and `/about#team` (a link)
+/// yields `team`. Extra candidates cost nothing.
 fn add_candidates<'t>(token: &'t str, emit: &mut impl FnMut(&'t str)) {
     const EDGE_PUNCTUATION: [char; 7] = ['.', '#', ':', '!', '?', '&', '|'];
 
@@ -278,8 +279,14 @@ fn add_candidates<'t>(token: &'t str, emit: &mut impl FnMut(&'t str)) {
     if trimmed.len() != token.len() {
         emit(trimmed);
     }
-    if trimmed.contains([':', '.']) {
-        for part in trimmed.split([':', '.']).filter(|part| !part.is_empty()) {
+    // `#` splits too: `/about#team` links to the `#team` rule. A `#` is
+    // never part of a Tailwind name outside `[…]`, and a part inside one
+    // (`bg-[#fff]`) is only an extra candidate.
+    if trimmed.contains([':', '.', '#']) {
+        for part in trimmed
+            .split([':', '.', '#'])
+            .filter(|part| !part.is_empty())
+        {
             emit(part);
         }
     }
@@ -389,6 +396,16 @@ mod tests {
     #[case::clsx_array(r#"clsx(["grid-cols-[1fr_2fr]", "bg-[url('/a.png')]"])"#, &["grid-cols-[1fr_2fr]", "bg-[url('/a.png')]"])]
     #[case::js_unicode_escape(r#"const html = "card\u0020btn";"#, &["btn"])]
     fn extract_classes_should_find_names_the_review_found_missing(
+        #[case] source: &str,
+        #[case] expected: &[&str],
+    ) {
+        assert_finds(source, expected);
+    }
+
+    // Third review: each of these deleted CSS a page uses.
+    #[rstest]
+    #[case::fragment_in_path(r#"<a href="/about#team">"#, &["team"])]
+    fn extract_classes_should_find_names_the_third_review_found_missing(
         #[case] source: &str,
         #[case] expected: &[&str],
     ) {
