@@ -247,11 +247,11 @@ fn other_reference_text<R: ToCss>(rules: &CssRuleList<'_, R>, text: &mut String)
     })
 }
 
-/// `--name` tokens in `text`, such as the `--brand` in `var(--brand, red)`.
+/// `--name` identifiers in `text`, unescaped so they compare equal to
+/// parsed names: the `--brand` in `var(--brand, red)`, `--a.b` for `--a\.b`.
 fn variable_references(text: &str) -> impl Iterator<Item = String> {
-    extract_classes(text)
-        .into_iter()
-        .filter(|token| token.starts_with("--") && token.len() > 2)
+    identifiers(text)
+        .filter(|name| name.starts_with("--") && name.len() > 2)
         .map(Cow::into_owned)
 }
 
@@ -310,6 +310,87 @@ fn live_variables<R: ToCss>(
         }
     }
     Some(live)
+}
+
+/// Identifiers in `text` (runs of name characters and escapes), unescaped.
+/// Borrowed unless an escape had to be decoded.
+fn identifiers(text: &str) -> impl Iterator<Item = Cow<'_, str>> {
+    let mut rest = text;
+    std::iter::from_fn(move || {
+        loop {
+            let start = rest.find(|c: char| is_name_char(c) || c == '\\')?;
+            let (name, len) = read_identifier(&rest[start..]);
+            // An invalid escape reads nothing: step over its `\`.
+            rest = &rest[start + len.max(1)..];
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+    })
+}
+
+/// Reads the identifier at the start of `text`; returns it unescaped with
+/// the number of bytes it took.
+fn read_identifier(text: &str) -> (Cow<'_, str>, usize) {
+    let mut decoded: Option<String> = None;
+    let mut end = 0;
+    while let Some(c) = text[end..].chars().next() {
+        if is_name_char(c) {
+            if let Some(decoded) = &mut decoded {
+                decoded.push(c);
+            }
+            end += c.len_utf8();
+        } else if let Some((escaped, len)) =
+            (c == '\\').then(|| read_escape(&text[end + 1..])).flatten()
+        {
+            decoded
+                .get_or_insert_with(|| text[..end].to_owned())
+                .push(escaped);
+            end += 1 + len;
+        } else {
+            break;
+        }
+    }
+    let name = decoded.map_or(Cow::Borrowed(&text[..end]), Cow::Owned);
+    (name, end)
+}
+
+/// Decodes the CSS escape that `text` starts with (what follows a `\`):
+/// up to six hex digits and one optional whitespace, or any other character
+/// but a newline. Returns the character and the bytes it took.
+fn read_escape(text: &str) -> Option<(char, usize)> {
+    let first = text.chars().next()?;
+    if matches!(first, '\n' | '\r' | '\u{c}') {
+        return None;
+    }
+    let digits = text
+        .bytes()
+        .take(6)
+        .take_while(u8::is_ascii_hexdigit)
+        .count();
+    if digits == 0 {
+        return Some((first, first.len_utf8()));
+    }
+    let code = text[..digits]
+        .chars()
+        .filter_map(|digit| digit.to_digit(16))
+        .fold(0, |code, digit| code * 16 + digit);
+    // NUL, surrogates and out-of-range values decode to U+FFFD.
+    let escaped = char::from_u32(code)
+        .filter(|_| code != 0)
+        .unwrap_or('\u{fffd}');
+    let rest = &text[digits..];
+    let whitespace = if rest.starts_with("\r\n") {
+        2
+    } else {
+        usize::from(rest.starts_with([' ', '\t', '\n', '\r', '\u{c}']))
+    };
+    Some((escaped, digits + whitespace))
+}
+
+/// ASCII letters, digits, `-`, `_` and everything non-ASCII.
+fn is_name_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '-' || c == '_' || !c.is_ascii()
 }
 
 /// Removes custom property declarations whose names are not in `live`, and
@@ -385,4 +466,71 @@ fn retain_rules<'i, R>(
         }
         keep(rule)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{PruneOptions, PruneOutput, prune};
+
+    fn prune_with(css: &str, used: &[&str], options: &PruneOptions) -> PruneOutput {
+        let used: BTreeSet<&str> = used.iter().copied().collect();
+        match prune(css, &used, &options.clone().minify(true)) {
+            Ok(output) => output,
+            Err(err) => panic!("prune failed: {err}"),
+        }
+    }
+
+    #[rstest]
+    #[case::plain("--plain", "--plain")]
+    #[case::escaped_char(r"--a\.b", "--a.b")]
+    #[case::escaped_slash(r"--w-1\/2", "--w-1/2")]
+    #[case::hex_with_space(r"--\31 x", "--1x")]
+    #[case::hex_ends_at_non_hex(r"--\31x", "--1x")]
+    #[case::hex_without_space(r"--\31a", "--\u{31a}")]
+    #[case::hex_six_digits(r"--\00003a", "--:")]
+    #[case::zero_is_replacement(r"--\0 ", "--\u{fffd}")]
+    #[case::non_ascii("--größe", "--größe")]
+    fn variable_references_should_unescape_names(#[case] text: &str, #[case] expected: &str) {
+        let found: Vec<_> = variable_references(text).collect();
+        assert_eq!(found, [expected]);
+    }
+
+    #[test]
+    fn variable_references_should_find_names_in_var_calls() {
+        let found: Vec<_> = variable_references("var(--a, var(--b)) calc(1px--c)").collect();
+        assert_eq!(found, ["--a", "--b"]);
+    }
+
+    #[rstest]
+    #[case::escaped_char(
+        r":root{--a\.b:red;--plain:blue}.a{color:var(--a\.b);background:var(--plain)}"
+    )]
+    #[case::escaped_slash(r":root{--w-1\/2:50%}.a{width:var(--w-1\/2)}")]
+    #[case::hex_escape(r":root{--\31 x:red}.a{color:var(--\31 x)}")]
+    #[case::escaped_chain(r":root{--a\.b:red;--c\:d:var(--a\.b)}.a{color:var(--c\:d)}")]
+    fn variables_should_keep_escaped_names_that_are_read(#[case] css: &str) {
+        let options = PruneOptions::default().variables(true);
+        assert_eq!(prune_with(css, &["a"], &options).removed_variables, 0);
+    }
+
+    #[test]
+    fn variables_should_remove_escaped_names_nobody_reads() {
+        let options = PruneOptions::default().variables(true);
+        let css = r":root{--a\.b:red}.a{color:red}";
+        assert_eq!(prune_with(css, &["a"], &options).css, ".a{color:red}");
+    }
+
+    #[rstest]
+    #[case::escaped_char(r".a{animation:a\.b 1s}@keyframes a\.b{to{opacity:0}}")]
+    #[case::hex_escape(r".a{animation:\31 spin 1s}@keyframes \31 spin{to{opacity:0}}")]
+    #[case::animation_name(r".a{animation-name:a\.b}@keyframes a\.b{to{opacity:0}}")]
+    fn keyframes_should_be_kept_when_an_escaped_name_is_referenced(#[case] css: &str) {
+        let options = PruneOptions::default().keyframes(true);
+        assert_eq!(prune_with(css, &["a"], &options).removed_keyframes, 0);
+    }
 }
