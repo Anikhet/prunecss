@@ -27,21 +27,46 @@ use crate::{rules, tracking};
 /// A set of class and id names known to be used by the content.
 ///
 /// Implemented for the standard sets so callers can pick whichever their
-/// scanner produces.
-pub trait UsedNames {
+/// scanner produces. The trait is sealed: it cannot be implemented outside
+/// this crate, so methods can be added without breaking callers.
+pub trait UsedNames: sealed::Sealed {
     /// Returns `true` if `name` (unescaped, without `.` or `#`) is used.
     fn contains_name(&self, name: &str) -> bool;
+
+    /// Returns `true` if a used name equals `name`, ignoring ASCII case.
+    ///
+    /// Font family names are case-insensitive, so `--font-face` asks this.
+    /// It walks the whole set, so call it only for a handful of names.
+    fn contains_name_ignoring_ascii_case(&self, name: &str) -> bool;
 }
+
+// Sealing: only the sets below implement `UsedNames`.
+mod sealed {
+    pub trait Sealed {}
+}
+
+impl sealed::Sealed for BTreeSet<&str> {}
+impl<S: BuildHasher> sealed::Sealed for HashSet<&str, S> {}
+impl sealed::Sealed for BTreeSet<Cow<'_, str>> {}
+impl<S: BuildHasher> sealed::Sealed for HashSet<Cow<'_, str>, S> {}
 
 impl UsedNames for BTreeSet<&str> {
     fn contains_name(&self, name: &str) -> bool {
         self.contains(name)
+    }
+
+    fn contains_name_ignoring_ascii_case(&self, name: &str) -> bool {
+        self.iter().any(|used| used.eq_ignore_ascii_case(name))
     }
 }
 
 impl<S: BuildHasher> UsedNames for HashSet<&str, S> {
     fn contains_name(&self, name: &str) -> bool {
         self.contains(name)
+    }
+
+    fn contains_name_ignoring_ascii_case(&self, name: &str) -> bool {
+        self.iter().any(|used| used.eq_ignore_ascii_case(name))
     }
 }
 
@@ -50,11 +75,19 @@ impl UsedNames for BTreeSet<Cow<'_, str>> {
     fn contains_name(&self, name: &str) -> bool {
         self.contains(name)
     }
+
+    fn contains_name_ignoring_ascii_case(&self, name: &str) -> bool {
+        self.iter().any(|used| used.eq_ignore_ascii_case(name))
+    }
 }
 
 impl<S: BuildHasher> UsedNames for HashSet<Cow<'_, str>, S> {
     fn contains_name(&self, name: &str) -> bool {
         self.contains(name)
+    }
+
+    fn contains_name_ignoring_ascii_case(&self, name: &str) -> bool {
+        self.iter().any(|used| used.eq_ignore_ascii_case(name))
     }
 }
 

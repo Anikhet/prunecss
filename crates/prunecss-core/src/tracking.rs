@@ -133,11 +133,9 @@ fn font_face_is_referenced(
         lowered_text.contains(&printed.to_ascii_lowercase())
             // Content holds the family as written, without CSS escapes.
             || unescape(&printed).split_ascii_whitespace().all(|word| {
-                // `UsedNames` can only be asked about exact names, so try
-                // the common spellings: as declared, lower and upper case.
-                used.contains_name(word)
-                    || used.contains_name(&word.to_ascii_lowercase())
-                    || used.contains_name(&word.to_ascii_uppercase())
+                // The exact lookup is cheap and covers the usual spelling;
+                // only then walk the set ignoring case.
+                used.contains_name(word) || used.contains_name_ignoring_ascii_case(word)
             })
     })
 }
@@ -626,10 +624,18 @@ mod tests {
     #[case::upper("MYFONT")]
     #[case::lower("myfont")]
     #[case::as_written("MyFont")]
+    #[case::mixed("mYfOnT")]
     fn font_face_should_be_kept_when_content_names_the_family_in_any_case(#[case] word: &str) {
         let options = PruneOptions::default().font_face(true);
         let css = "@font-face{font-family:MyFont;src:url(f.woff2)}";
         assert_eq!(prune_with(css, &[word], &options).removed_font_faces, 0);
+    }
+
+    #[test]
+    fn font_face_should_be_kept_when_content_capitalises_a_lowercase_family() {
+        let options = PruneOptions::default().font_face(true);
+        let css = "@font-face{font-family:inter;src:url(f.woff2)}";
+        assert_eq!(prune_with(css, &["Inter"], &options).removed_font_faces, 0);
     }
 
     #[test]
