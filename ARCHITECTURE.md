@@ -119,7 +119,7 @@ happen.
   the input. Pruning is idempotent: pruning the output again changes nothing.
 - **Never panic or abort on any input.** Broken CSS is skipped (each skip
   is returned as a `ParseWarning`) or reported as a `PruneError`;
-  stylesheets nested more than 100 levels deep are refused before parsing,
+  stylesheets nested more than 40 levels deep are refused before parsing,
   so recursion can't overflow the stack. Property tests and fuzzing check
   this.
 - **Never drop CSS silently.** Every rule the parser skips is reported, and

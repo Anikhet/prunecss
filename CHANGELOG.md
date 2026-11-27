@@ -15,17 +15,35 @@ not a raw commit log. See [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages).
 
 ## [Unreleased]
 
+### Added
+
+- CLI: `--no-minify`, `--no-keyframes`, `--no-font-face` and
+  `--no-variables` turn off a setting from `prunecss.json`;
+  `--safelist-keyframes` and `--safelist-variables` protect names from the
+  command line.
+
+### Changed
+
+- CLI: when stylesheets are named on the command line, `output` from
+  `prunecss.json` is ignored; only `-o` decides where results go.
+- Core API: `Pattern` no longer exposes the `regex` crate; `PatternError`
+  has a `kind()` (`PatternErrorKind`), `message()` and `pattern()`;
+  `UsedNames` is sealed and gains `contains_name_ignoring_ascii_case`.
+- Stylesheets nested more than 40 levels deep are refused (was 100), so
+  `prune` stays within a 2 MiB thread stack even in debug builds.
+
 ### Fixed
 
 - CLI: never overwrites an input stylesheet or content file, including
   through hard links and symlinks; follows symlinked content files; exits
-  quietly on a broken pipe; boolean flags have `--no-*` forms.
+  quietly on a broken pipe.
 - Scanner: finds Tailwind v4 classes with `(--var)` values and names
   written with double-escaped or named HTML entities.
 - Pruner: tracks custom properties with escaped names; the nesting-depth
   limit can no longer be bypassed; legacy placeholder pseudo-classes are
   repaired inside `:nth-child(… of …)` and `@scope`; at-rules with an empty
-  prelude are reported.
+  prelude are reported; `--font-face` matches family names in any case;
+  `--stats` counts selectors in at-rules nested inside removed rules.
 
 ## [0.1.0] - Unreleased
 
