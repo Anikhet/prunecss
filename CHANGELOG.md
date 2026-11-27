@@ -77,9 +77,11 @@ First release.
   names at all, since every class would look unused. A single pattern that
   matches nothing prints a warning, as does a stylesheet none of whose
   classes are used.
-- **Warnings** for rules the parser can't read and at-rules with an empty
-  prelude (`ParseWarning`, printed as `warning: file:line:col: …`, listed in
-  `--json`, counted by `--check`).
+- **Warnings** for rules and declarations the parser can't read and drops,
+  including at-rules with an empty prelude such as `@supports{…}`
+  (`ParseWarning`, printed as `warning: file:line:col: …`, listed in
+  `--json`, counted by `--check`). Problems the parser recovers from while
+  keeping the rule are not reported.
 - **Output that stays compatible**: printing targets old browsers (colours
   stay `rgba()` rather than 8-digit hex, media queries use the `min-width`
   form, nesting is never flattened); legacy `:-moz-placeholder` and
