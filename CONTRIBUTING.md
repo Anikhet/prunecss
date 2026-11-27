@@ -130,7 +130,7 @@ Test style:
 
 - Unit tests live in a `#[cfg(test)] mod tests` block next to the code.
   Integration tests in `crates/prunecss-cli/tests/` run the real binary
-  against sample files in `tests/fixtures/`.
+  against sample files in `crates/prunecss-cli/tests/fixtures/`.
 - Name tests by behaviour: `extract_classes_should_ignore_data_attributes`.
 - One behaviour per test. Prefer `assert_eq!` over `assert!`.
 - Use `rstest` for table-style cases, `proptest` for rules that must hold for

@@ -20,7 +20,7 @@ why.
 The data flow is a straight line:
 
 ```text
-content globs ──expand──▶ files ──read (parallel)──▶ text ──extract_classes──▶ set of &str names ─┐
+content globs ──expand──▶ files ──read (parallel)──▶ text ──extract_classes──▶ set of names ──────┐
                                                                                                     ▼
 stylesheet ──read──▶ text ──Lightning CSS parse──▶ rules ──prune selectors──▶ ──track at-rules──▶ ──print──▶ CSS
                           (error recovery on)          (+ safelist)          (opt-in)        (media queries lowered)
@@ -28,11 +28,13 @@ stylesheet ──read──▶ text ──Lightning CSS parse──▶ rules ─
 
 1. **Find and read.** The CLI expands paths and globs (respecting
    `.gitignore`) and reads every content file into a `String`, in parallel.
-   If no content file matches, it stops: every class would look unused.
+   If no content file matches, or the files hold no names at all, it stops:
+   every class would look unused.
 2. **Scan.** `extract_classes` splits each file into candidate names, the
    approach Tailwind's scanner uses, so it works on HTML, JSX, Vue, Svelte,
-   Astro and plain JavaScript alike. Candidates are `&str` slices borrowed
-   from the file text, so no strings are copied. The CLI merges them, in
+   Astro and plain JavaScript alike. Candidates are borrowed from the file
+   text, so almost no strings are copied; only names that appear after
+   decoding HTML entities or JavaScript escapes are. The CLI merges them, in
    parallel, into one hash set.
 3. **Parse.** `prune` parses the stylesheet with Lightning CSS, with error
    recovery on, so one broken rule does not fail the whole file.
@@ -49,15 +51,16 @@ stylesheet ──read──▶ text ──Lightning CSS parse──▶ rules ─
 
 ### `crates/prunecss-core`
 
-The library. All logic lives here. It is published to crates.io and will be
+The library. All logic lives here. It will be published to crates.io and
 wrapped by every future front end.
 
 - `src/lib.rs`: the public API. Modules are private and every public item is
   re-exported at the crate root, so each item has exactly one path.
 - `src/scanner.rs`: `extract_classes`, a linear-time tokenizer that splits
-  text into candidate names. It reads the text twice, keeping `[…]` whole
-  (Tailwind arbitrary values) and splitting on it (JavaScript arrays), and
-  returns the union.
+  text into candidate names. Brackets are ambiguous, so it reads the text in
+  up to three ways, keeping `[…]` whole (Tailwind arbitrary values) and
+  splitting on it (JavaScript arrays), and returns the union. It also scans
+  a decoded copy when the text has HTML entities or JavaScript escapes.
 - `src/pruner.rs`: `prune`, `defined_names`, `PruneOptions`, `PruneOutput`,
   `PruneError`, `PruneErrorKind`, `SourceLocation` and the `UsedNames`
   trait. This is where the decision "keep or remove" is made for selectors.
@@ -111,8 +114,8 @@ happen.
   can't be inspected, tracking removes nothing.
 - **A safelisted name always survives.** Names inside `:not()`/`:has()`
   never trigger the safelist.
-- **No content, no pruning.** If the content patterns match no files, the
-  CLI refuses to run.
+- **No content, no pruning.** If the content patterns match no files, or
+  the files contain no names, the CLI refuses to run.
 - **Never remove a named `@layer`**, even an empty one. It fixes cascade
   order.
 - **Never invent rules.** The output contains only rules and selectors from
@@ -180,5 +183,5 @@ happen.
   aims for 100%.
 - **Errors.** The core uses its own `PruneError` type with a 1-based
   `SourceLocation`; the CLI wraps errors with `anyhow` context.
-- **Performance.** Borrow, don't copy: class names stay `&str` slices of the
-  input. Measure with `--release` builds only.
+- **Performance.** Borrow, don't copy: class names stay slices of the
+  input, except the few that exist only after decoding escapes. Measure with `--release` builds only.

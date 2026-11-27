@@ -14,7 +14,7 @@ or step by step:
 cd bench
 npm ci                 # pinned tools (package-lock.json)
 npm run fetch          # corpora into corpus/, checked against corpus/manifest.json
-npm run bench          # = node run.mjs; see `node run.mjs --help`-style flags below
+npm run bench          # = node run.mjs; flags below
 ```
 
 Results land in `results/<date>-<host>.json` (all raw data) and a generated
@@ -41,11 +41,11 @@ From `results/2026-11-26-vm.md` (prunecss commit `a66faef`, PurgeCSS 9.1.0):
 | Possible false removals (static DOM) | **prunecss 0 on every corpus**; PurgeCSS 376 on Tailwind (default extractor), 1 with the Tailwind extractor, 5 on the edge cases (see the note below) |
 | Output size | PurgeCSS is smaller, mostly because prunecss always keeps tag/attribute selectors. prunecss's extra bytes, minified / gzip / brotli: Bootstrap 0.8 / 0.2 / 0.2 kB, Bulma 65.6 / 5.7 / 0.1 kB, Tailwind 30.0 / 3.9 / 2.7 kB (2.8 / 0.7 / 0.6 kB against the Tailwind extractor), synthetic corpora up to 40.4 / 5.0 / 4.2 kB |
 
-The committed run predates a fix to the false-removal count: `run.mjs` then
-counted PurgeCSS's trimmed `:is()` list (`:is(.alert, .toast) .close` printed
-as `.alert .close`, which is correct) as a removal, so the results file says 6
-for the edge cases. The JSON's examples show the other 5 are escaped Tailwind
-names. `run.mjs` now counts trimmed `:is()`/`:where()` lists as rewritten.
+Note on the edge cases: when this run was made, `run.mjs` counted PurgeCSS's
+trimmed `:is()` list (`:is(.alert, .toast) .close` printed as
+`.alert .close`, which is correct) as a removal, so the results file says 6.
+The other 5 are escaped Tailwind names. `run.mjs` now counts trimmed
+`:is()`/`:where()` lists as rewritten.
 
 Rust micro-benchmarks are separate and need no corpus:
 
@@ -60,10 +60,10 @@ downloaded the real Bootstrap corpus.
 ## What is measured, and why
 
 Every tool gets **the same stylesheet, the same content files and the same
-(empty) safelist**. prunecss cannot take globs yet, so the harness expands
-each corpus's file pattern itself and passes the identical explicit list to
-both CLIs (one function, `contentArgs` in `run.mjs`, to change when globs
-land). Before anything is timed, each command is run once and must exit 0
+(empty) safelist**. The harness expands each corpus's file pattern itself
+and passes the identical explicit file list to both CLIs (`contentArgs` in
+`run.mjs`), so differences in glob handling cannot change what either tool
+reads. Before anything is timed, each command is run once and must exit 0
 and write a non-empty file; the output's SHA-256 is recorded. A tool that
 fails quietly cannot look fast.
 
@@ -174,9 +174,8 @@ for long suites, run the harness several times and compare.
 - **Both tools run with defaults**: no safelist, explicit file lists, and
   keyframes/fonts/variables kept. prunecss's scanner reads every token of a
   file (like Tailwind's), so it sees `classList.add('show')`, `clsx()`,
-  Vue `:class`, Svelte `class:`, `id=` and unquoted `class=foo`, which the
-  first harness run (against an early build) flagged as gaps; those are
-  fixed and kept as regression checks in `repro/false-removals.sh`.
+  Vue `:class`, Svelte `class:`, `id=` and unquoted `class=foo`.
+  `repro/false-removals.sh` checks these cases.
 - **Design differences, not bugs**: prunecss never removes tag, attribute
   or pseudo-only selectors (`kbd`, `[data-theme=dark]`, `::selection`);
   PurgeCSS removes them when the word never appears. On Bulma this alone is
@@ -205,13 +204,15 @@ bench/
   lib/sizes.mjs               shared minifier + gzip/brotli
   lib/env.mjs                 versions, hardware, OS
   lib/report.mjs              JSON -> Markdown
+  lib/util.mjs                shared helpers
   scripts/fetch-corpus.mjs    fetch + generate + verify corpora
   scripts/gen-tailwind.mjs    Tailwind pages and input CSS
   scripts/gen-synthetic.mjs   scaling corpus
   scripts/tinybench-purgecss.mjs  in-process PurgeCSS timing
+  scripts/chart.mjs           results JSON -> SVG chart (assets/benchmark.svg)
   config/purgecss-tailwind.config.mjs
   corpus/manifest.json        sources + SHA-256 of every corpus file
   corpus/edge/                hand-written edge cases (committed)
-  repro/false-removals.sh     regression checks for prunecss bugs found here (all fixed)
+  repro/false-removals.sh     regression checks for cases the harness once caught
   results/                    committed result files
 ```
