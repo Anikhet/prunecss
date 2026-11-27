@@ -197,7 +197,9 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
         files: reports,
     };
     if settings.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        let mut json = serde_json::to_string_pretty(&report)?;
+        json.push('\n');
+        print_stdout(&json)?;
     } else if settings.stats || settings.check {
         print_summary(&report, settings.check);
     }
@@ -221,10 +223,11 @@ pub(crate) fn scan(content: &Patterns, css: Option<&Path>, gitignore: bool) -> R
     }
     // Hash-set order is random; print sorted so output is reproducible.
     names.sort_unstable();
-    for name in names {
-        println!("{name}");
-    }
-    Ok(())
+    let text: String = names
+        .iter()
+        .flat_map(|name| [name.as_ref(), "\n"])
+        .collect();
+    print_stdout(&text)
 }
 
 fn css_inputs(settings: &PruneSettings, output: Option<&Path>) -> Result<Vec<Input>> {
@@ -584,11 +587,23 @@ fn used_names(sources: &[Source]) -> FxHashSet<Cow<'_, str>> {
 
 /// Writes one result to its planned destination, or standard output.
 fn write_output(destination: Option<&Path>, css: &str) -> Result<()> {
-    let Some(destination) = destination else {
-        print!("{css}");
-        return Ok(());
-    };
-    write_file(destination, css)
+    match destination {
+        Some(destination) => write_file(destination, css),
+        None => print_stdout(css),
+    }
+}
+
+/// Writes `text` to standard output. A reader that stops early
+/// (`prunecss scan | head`) is not an error: the rest is simply not wanted.
+pub(crate) fn print_stdout(text: &str) -> Result<()> {
+    let mut stdout = std::io::stdout().lock();
+    match stdout
+        .write_all(text.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        result => result.context("writing to standard output"),
+    }
 }
 
 /// Writes to a temporary file next to `destination`, then renames it over

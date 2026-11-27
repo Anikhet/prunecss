@@ -1,12 +1,9 @@
 //! `prunecss` command-line tool.
 
 // The workspace forbids printing so the library never does; printing is this
-// binary's whole job.
-#![expect(
-    clippy::print_stdout,
-    clippy::print_stderr,
-    reason = "the CLI prints its results"
-)]
+// binary's whole job. Standard output goes through `run::print_stdout`, which
+// handles a closed pipe; messages go to standard error.
+#![expect(clippy::print_stderr, reason = "the CLI prints its messages")]
 
 mod config;
 mod files;
@@ -197,16 +194,15 @@ fn run(cli: Cli) -> Result<Outcome> {
             Ok(Outcome::Clean)
         }
         Command::Schema => {
-            print!("{}", config::schema());
+            run::print_stdout(&config::schema())?;
             Ok(Outcome::Clean)
         }
         Command::Completions { shell } => {
-            clap_complete::generate(
-                shell,
-                &mut Cli::command(),
-                "prunecss",
-                &mut std::io::stdout(),
-            );
+            // Generated into memory: `generate` panics if writing fails, as
+            // it would on a closed pipe.
+            let mut script = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "prunecss", &mut script);
+            run::print_stdout(&String::from_utf8_lossy(&script))?;
             Ok(Outcome::Clean)
         }
     }

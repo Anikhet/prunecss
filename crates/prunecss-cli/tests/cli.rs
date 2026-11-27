@@ -1019,3 +1019,48 @@ fn prune_should_warn_about_content_it_cannot_walk() {
         stderr(&output)
     );
 }
+
+/// Runs prunecss with its standard output closed before it writes.
+fn run_with_closed_stdout(dir: &Path, args: &[&str]) -> Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_prunecss"))
+        .current_dir(dir)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    child.wait_with_output().unwrap()
+}
+
+/// More output than a pipe buffers, so writing must hit the closed pipe.
+fn big_project() -> tempfile::TempDir {
+    let classes: Vec<String> = (0..20_000).map(|i| format!("c{i}")).collect();
+    let html = format!(r#"<p class="{}">"#, classes.join(" "));
+    let css: String = classes
+        .iter()
+        .flat_map(|class| [".", class, "{color:red}\n"])
+        .collect();
+    project(&[("src/i.html", &html), ("big.css", &css)])
+}
+
+#[test]
+fn prune_should_exit_cleanly_when_standard_output_is_closed() {
+    let dir = big_project();
+    let output = run_with_closed_stdout(dir.path(), &["prune", "big.css", "-c", "src"]);
+    assert_eq!(
+        (output.status.code(), stderr(&output)),
+        (Some(0), String::new())
+    );
+}
+
+#[test]
+fn scan_should_exit_cleanly_when_standard_output_is_closed() {
+    let dir = big_project();
+    let output = run_with_closed_stdout(dir.path(), &["scan", "src"]);
+    assert_eq!(
+        (output.status.code(), stderr(&output)),
+        (Some(0), String::new())
+    );
+}
