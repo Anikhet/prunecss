@@ -23,6 +23,7 @@ clap = { version = "4", features = ["derive"] }
 # Linear-time matching: safelist patterns come from user config and must not
 # allow catastrophic backtracking. Default features keep full Unicode support
 # (`(?i)`, `\p{L}`), which class names in any language need.
+memchr = "2.7"
 regex = "1.13"
 clap_complete = "4.6"
 serde = { version = "1.0", features = ["derive"] }

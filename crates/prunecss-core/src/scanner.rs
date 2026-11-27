@@ -153,7 +153,9 @@ fn decode_escapes(text: &str) -> Option<String> {
     // `text[..copied]` is already in `decoded` (or needed no change).
     let mut copied = 0;
     let mut search = 0;
-    while let Some(offset) = text[search..].find(['&', '\\']) {
+    // `memchr2` is a vectorised search; `str::find` with a char array
+    // checks one char at a time, which cost ~4% of a whole CLI run.
+    while let Some(offset) = memchr::memchr2(b'&', b'\\', &text.as_bytes()[search..]) {
         let at = search + offset;
         // `&` and `\` are ASCII, so `at + 1` is a char boundary.
         let after = &text[at + 1..];

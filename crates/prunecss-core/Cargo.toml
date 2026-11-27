@@ -14,6 +14,7 @@ exclude = ["proptest-regressions/"]
 
 [dependencies]
 lightningcss.workspace = true
+memchr.workspace = true
 regex.workspace = true
 rustc-hash.workspace = true
 
