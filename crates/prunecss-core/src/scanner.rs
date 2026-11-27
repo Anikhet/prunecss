@@ -23,7 +23,8 @@ use rustc_hash::FxHashSet;
 /// any static scanner; safelist them instead.
 ///
 /// Names are borrowed from `source`; only names that exist after decoding
-/// HTML entities (`&amp;`, `&quot;`, `&colon;`, `&#38;`, …) are copied.
+/// HTML entities (`&amp;`, `&quot;`, `&colon;`, `&#38;`, …) or JavaScript
+/// escapes (`\x41`, `\u0041`, `\u{41}`) are copied.
 ///
 /// ```
 /// use prunecss_core::extract_classes;
@@ -44,10 +45,11 @@ pub fn extract_classes(source: &str) -> BTreeSet<Cow<'_, str>> {
         names.iter().map(|name| Cow::Borrowed(*name)).collect();
     // Server-rendered HTML escapes attribute text (`[&amp;_p]:mt-2`,
     // `class=&quot;badge&quot;`), sometimes twice when escaped markup is put
-    // inside another attribute (`&amp;quot;`). Scan decoded copies as well,
+    // inside another attribute (`&amp;quot;`). Scripts escape characters
+    // in strings (`"btn\x2dlg"` is `btn-lg`). Scan decoded copies as well,
     // decoding again until nothing changes; the few names that only exist
     // after decoding are the only ones that get copied.
-    let mut decoded = decode_entities(source);
+    let mut decoded = decode_escapes(source);
     for pass in 1..=MAX_DECODE_PASSES {
         let Some(text) = decoded else { break };
         let mut decoded_names: FxHashSet<&str> = FxHashSet::default();
@@ -64,7 +66,7 @@ pub fn extract_classes(source: &str) -> BTreeSet<Cow<'_, str>> {
                 .map(|name| Cow::Owned((*name).to_owned())),
         );
         decoded = if pass < MAX_DECODE_PASSES {
-            decode_entities(&text)
+            decode_escapes(&text)
         } else {
             None
         };
@@ -123,29 +125,64 @@ fn after_js_escape<'t>(text: &'t str, token: &'t str) -> Option<&'t str> {
     Some(&token[skip..]).filter(|rest| !rest.is_empty())
 }
 
-/// Decodes the HTML entities that appear in escaped markup. Returns `None`
-/// when there is nothing to decode, so most files are scanned only once.
-fn decode_entities(text: &str) -> Option<String> {
-    if !text.contains('&') {
-        return None;
-    }
-    let mut decoded = String::with_capacity(text.len());
-    let mut rest = text;
-    let mut changed = false;
-    while let Some(amp) = rest.find('&') {
-        decoded.push_str(&rest[..amp]);
-        let after = &rest[amp + 1..];
-        if let Some((ch, consumed)) = decode_one(after) {
-            decoded.push(ch);
-            rest = &after[consumed..];
-            changed = true;
+/// Decodes the HTML entities and JavaScript hex escapes in `text`. Returns
+/// `None` when there is nothing to decode, so most files are scanned once
+/// and nothing is allocated for them.
+fn decode_escapes(text: &str) -> Option<String> {
+    let mut decoded: Option<String> = None;
+    // `text[..copied]` is already in `decoded` (or needed no change).
+    let mut copied = 0;
+    let mut search = 0;
+    while let Some(offset) = text[search..].find(['&', '\\']) {
+        let at = search + offset;
+        // `&` and `\` are ASCII, so `at + 1` is a char boundary.
+        let after = &text[at + 1..];
+        let escape = if text.as_bytes()[at] == b'&' {
+            decode_one(after)
         } else {
-            decoded.push('&');
-            rest = after;
+            decode_js_escape(after)
+        };
+        match escape {
+            Some((ch, used)) => {
+                let out = decoded.get_or_insert_with(|| String::with_capacity(text.len()));
+                out.push_str(&text[copied..at]);
+                out.push(ch);
+                copied = at + 1 + used;
+                search = copied;
+            }
+            None => search = at + 1,
         }
     }
-    decoded.push_str(rest);
-    changed.then_some(decoded)
+    let mut out = decoded?;
+    out.push_str(&text[copied..]);
+    Some(out)
+}
+
+/// Decodes one JavaScript escape that names a character by its code, at
+/// the start of `text` (just after `\`): `x41`, `u0041` or `u{41}`.
+/// Returns the character and how many bytes the escape used.
+///
+/// Letter escapes such as `\n` are left to [`after_js_escape`]: they stand
+/// for whitespace, which only splits names.
+fn decode_js_escape(text: &str) -> Option<(char, usize)> {
+    let bytes = text.as_bytes();
+    // `get` returns `None` instead of slicing inside a multi-byte char.
+    let (digits, used) = match bytes.first()? {
+        b'x' => (text.get(1..3)?, 3),
+        b'u' if bytes.get(1) == Some(&b'{') => {
+            // At most six hex digits fit in a code point: `u{10FFFF}`.
+            let close = bytes.iter().take(9).position(|&byte| byte == b'}')?;
+            (text.get(2..close)?, close + 1)
+        }
+        b'u' => (text.get(1..5)?, 5),
+        _ => return None,
+    };
+    // `from_str_radix` would also accept a leading `+`.
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let code = u32::from_str_radix(digits, 16).ok()?;
+    Some((char::from_u32(code)?, used))
 }
 
 /// Named entities that encoders emit for ASCII characters, from the HTML
@@ -538,6 +575,10 @@ mod tests {
     #[case::legacy_quot_without_semicolon(r#"<i data-x="<b class=&quotbadge&quot>">"#, &["badge"])]
     #[case::numeric_without_semicolon(r#"<p class="[&#38_p]:mt-2">"#, &["[&_p]:mt-2"])]
     #[case::fragment_in_path(r#"<a href="/about#team">"#, &["team"])]
+    #[case::js_hex_escape(r#"const c = "\x41bc";"#, &["Abc"])]
+    #[case::js_unicode_escape_letter(r#"const c = "\u0041bc";"#, &["Abc"])]
+    #[case::js_braced_unicode_escape(r#"const c = "\u{41}bc";"#, &["Abc"])]
+    #[case::js_escape_mid_name(r#"const c = "btn\x2dlg";"#, &["btn-lg"])]
     fn extract_classes_should_find_names_the_third_review_found_missing(
         #[case] source: &str,
         #[case] expected: &[&str],
