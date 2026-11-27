@@ -2,16 +2,17 @@
 
 ## Supported versions
 
-prunecss is still at 0.x. Only the latest 0.x minor release gets security
-fixes. For example, once 0.3.0 is out, fixes go into 0.3.x and 0.2.x gets no
-more updates.
+No version has been released yet; the first will be 0.1.0. While prunecss
+is at 0.x, only the latest 0.x minor release gets security fixes. For
+example, once 0.3.0 is out, fixes go into 0.3.x and 0.2.x gets no more
+updates. Until 0.1.0 is out, fixes go into `main`.
 
 | Version              | Supported |
 | -------------------- | --------- |
 | latest 0.x minor     | yes       |
 | older 0.x releases   | no        |
 
-This covers both published crates: `prunecss` (the command-line tool) and
+This covers both crates: `prunecss` (the command-line tool) and
 `prunecss-core` (the library).
 
 ## Reporting a vulnerability
@@ -19,12 +20,10 @@ This covers both published crates: `prunecss` (the command-line tool) and
 Please **do not** open a public issue, discussion or pull request for a
 security problem.
 
-Report it privately through GitHub instead:
-
-1. Go to the [Security tab](https://github.com/Anikhet/prunecss/security) of
-   the repository.
-2. Click **Report a vulnerability**.
-3. Fill in the form.
+Report it privately through GitHub instead, with the
+[vulnerability report form](https://github.com/Anikhet/prunecss/security/advisories/new)
+(also reachable from the repository's **Security** tab, **Report a
+vulnerability**). You need a GitHub account.
 
 Only the maintainer can see the report. GitHub turns it into a draft
 advisory where we can talk, share a fix and credit you.
@@ -51,7 +50,7 @@ We follow coordinated disclosure. Please give us a reasonable time to release
 a fix before you share details publicly. We will agree on a disclosure date
 with you, and credit you in the advisory unless you prefer not to be named.
 
-For a confirmed vulnerability in a published crate, we will:
+For a confirmed vulnerability in a released version, we will:
 
 1. release a fixed version on crates.io;
 2. publish a GitHub security advisory;
