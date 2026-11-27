@@ -294,12 +294,7 @@ pub fn prune(
     // Browsers drop a leading byte-order mark; left in, it would become
     // part of the first selector.
     let css = css.strip_prefix('\u{feff}').unwrap_or(css);
-    // Lightning CSS reads `::-ms-input-placeholder` as `::-moz-placeholder`,
-    // and after parsing the two can't be told apart. Hide it behind a name
-    // Lightning CSS keeps as written, and restore it after printing.
-    let masked = css
-        .contains(MS_PLACEHOLDER)
-        .then(|| css.replace(MS_PLACEHOLDER, MS_PLACEHOLDER_MASK));
+    let (masked, masks) = mask_legacy_names(css);
     let css = masked.as_deref().unwrap_or(css);
     let warnings = Arc::new(RwLock::new(Vec::new()));
     let mut sheet = parse_sheet(css, Some(Arc::clone(&warnings)))?;
@@ -353,17 +348,17 @@ pub fn prune(
         .map(|warnings| {
             warnings
                 .iter()
-                .map(ParseWarning::from_lightningcss)
+                .map(|warning| {
+                    let mut warning = ParseWarning::from_lightningcss(warning);
+                    warning.message = masks.unmask(warning.message);
+                    warning
+                })
                 .collect()
         })
         .unwrap_or_default();
 
     Ok(PruneOutput {
-        css: with_charset(
-            unmask_placeholders(printed.code, masked.is_some()),
-            css,
-            options.minify,
-        ),
+        css: with_charset(masks.unmask(printed.code), css, options.minify),
         warnings,
         removed_selectors,
         kept_named_selectors: matcher.kept_named.get(),
@@ -373,15 +368,106 @@ pub fn prune(
     })
 }
 
-const MS_PLACEHOLDER: &str = "::-ms-input-placeholder";
-const MS_PLACEHOLDER_MASK: &str = "::-prunecss-ms-input-placeholder";
+/// A selector name Lightning CSS misreads, so [`mask_legacy_names`] hides
+/// it before parsing.
+struct Legacy {
+    /// The name after the colon(s), in lower case.
+    name: &'static str,
+    /// Whether it is a pseudo-element (`::`) rather than a pseudo-class.
+    pseudo_element: bool,
+    /// The start of its mask; digits fill the rest.
+    mask_prefix: &'static str,
+}
 
-fn unmask_placeholders(code: String, masked: bool) -> String {
-    if masked {
-        code.replace(MS_PLACEHOLDER_MASK, MS_PLACEHOLDER)
-    } else {
-        code
+/// Lightning CSS reads `::-ms-input-placeholder` as `::-moz-placeholder`,
+/// and after parsing the two can't be told apart.
+const LEGACY_NAMES: [Legacy; 1] = [Legacy {
+    name: "-ms-input-placeholder",
+    pseudo_element: true,
+    mask_prefix: "-pcss-ms-",
+}];
+
+/// The masks used for one stylesheet, to undo with [`Masks::unmask`].
+#[derive(Debug, Default)]
+struct Masks(Vec<(String, &'static str)>);
+
+impl Masks {
+    fn unmask(&self, text: String) -> String {
+        self.0.iter().fold(text, |text, (mask, name)| {
+            if text.contains(mask.as_str()) {
+                text.replace(mask.as_str(), name)
+            } else {
+                text
+            }
+        })
     }
+}
+
+/// Replaces each [`LEGACY_NAMES`] entry, in any ASCII case, with a name
+/// Lightning CSS keeps as written; printing and [`Masks::unmask`] restore
+/// it. A mask has the same length as the name, so warning columns still
+/// point into the original text, and it is chosen so it does not occur in
+/// `css`, so unmasking never rewrites text that was there already.
+fn mask_legacy_names(css: &str) -> (Option<String>, Masks) {
+    let mut masked: Option<String> = None;
+    let mut masks = Masks::default();
+    for legacy in &LEGACY_NAMES {
+        let text = masked.as_deref().unwrap_or(css);
+        let starts = legacy_name_starts(text, legacy);
+        if starts.is_empty() {
+            continue;
+        }
+        let Some(mask) = unused_mask(text, legacy.mask_prefix, legacy.name.len()) else {
+            continue;
+        };
+        let mut out = String::with_capacity(text.len());
+        let mut copied = 0;
+        for start in starts {
+            out.push_str(text.get(copied..start).unwrap_or_default());
+            out.push_str(&mask);
+            copied = start + legacy.name.len();
+        }
+        out.push_str(text.get(copied..).unwrap_or_default());
+        masks.0.push((mask, legacy.name));
+        masked = Some(out);
+    }
+    (masked, masks)
+}
+
+/// Byte offsets where `legacy.name` starts after its colon(s) in `css`.
+fn legacy_name_starts(css: &str, legacy: &Legacy) -> Vec<usize> {
+    let bytes = css.as_bytes();
+    css.match_indices(':')
+        .map(|(colon, _)| colon + 1)
+        .filter(|&start| {
+            let is_element = start >= 2 && bytes.get(start - 2) == Some(&b':');
+            is_element == legacy.pseudo_element
+                && bytes
+                    .get(start..start + legacy.name.len())
+                    .is_some_and(|name| name.eq_ignore_ascii_case(legacy.name.as_bytes()))
+        })
+        .collect()
+}
+
+/// A mask `prefix` + digits, `width` bytes long, that does not occur in
+/// `css` in any case. Only windows starting with `prefix` can collide, and
+/// there are fewer of those than candidates tried, so one is always free.
+fn unused_mask(css: &str, prefix: &str, width: usize) -> Option<String> {
+    let bytes = css.as_bytes();
+    let taken: HashSet<Vec<u8>> = css
+        .match_indices('-')
+        .filter_map(|(start, _)| bytes.get(start..start + width))
+        .filter(|window| {
+            window
+                .get(..prefix.len())
+                .is_some_and(|p| p.eq_ignore_ascii_case(prefix.as_bytes()))
+        })
+        .map(<[u8]>::to_ascii_lowercase)
+        .collect();
+    let digits = width.checked_sub(prefix.len())?;
+    (0..=taken.len())
+        .map(|n| format!("{prefix}{n:0digits$}"))
+        .find(|mask| mask.len() == width && !taken.contains(mask.as_bytes()))
 }
 
 /// Deeper nesting than this is refused. Real stylesheets nest a handful of
@@ -1905,6 +1991,56 @@ mod tests {
     #[case::standard_unchanged("input:placeholder-shown{color:red}")]
     fn prune_should_print_legacy_placeholder_selectors_as_written(#[case] css: &str) {
         assert_eq!(prune_min(css, &[]), css);
+    }
+
+    // Third review: pseudo-element names ignore ASCII case, and the hiding
+    // place must not rewrite text the stylesheet already contains.
+    #[rstest]
+    #[case::upper_case(
+        "input::-MS-INPUT-PLACEHOLDER{color:red}",
+        "input::-ms-input-placeholder{color:red}"
+    )]
+    #[case::mixed_case(
+        "input::-Ms-Input-Placeholder{color:red}",
+        "input::-ms-input-placeholder{color:red}"
+    )]
+    #[case::old_mask_written_literally(
+        "input::-prunecss-ms-input-placeholder{color:red}input::-ms-input-placeholder{color:red}",
+        "input::-prunecss-ms-input-placeholder{color:red}input::-ms-input-placeholder{color:red}"
+    )]
+    #[case::new_mask_written_literally(
+        "input::-pcss-ms-000000000000{color:red}input::-pcss-ms-000000000001{color:red}input::-ms-input-placeholder{color:red}",
+        "input::-pcss-ms-000000000000{color:red}input::-pcss-ms-000000000001{color:red}input::-ms-input-placeholder{color:red}"
+    )]
+    fn prune_should_print_the_ms_placeholder_pseudo_element_faithfully(
+        #[case] css: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(prune_min(css, &[]), expected);
+    }
+
+    #[test]
+    fn unused_mask_should_skip_masks_the_text_contains_in_any_case() {
+        let css = "-pcss-ms-000000000000 -PCSS-MS-000000000001";
+        assert_eq!(
+            unused_mask(css, "-pcss-ms-", 21).as_deref(),
+            Some("-pcss-ms-000000000002")
+        );
+    }
+
+    #[test]
+    fn prune_should_report_warning_columns_of_the_original_text() {
+        let column = |css: &str| {
+            prune(css, &BTreeSet::from(["a", "b"]), &PruneOptions::default())
+                .ok()
+                .and_then(|output| output.warnings.first().and_then(|w| w.location))
+                .map(|location| location.column)
+        };
+        // `::-xx-input-placeholder` has the same length and is kept as is.
+        assert_eq!(
+            column(".a::-ms-input-placeholder{} .a >>> .b{}"),
+            column(".a::-xx-input-placeholder{} .a >>> .b{}")
+        );
     }
 
     // Pre-release review: reprinting must not modernise values that older
