@@ -949,3 +949,21 @@ fn output_directory_should_be_excluded_from_globs_through_a_symlink() {
         "previous output was pruned again"
     );
 }
+
+#[test]
+fn output_should_name_the_directory_when_every_stylesheet_is_inside_it() {
+    let dir = project(&[
+        ("i.html", r#"<p class="a">"#),
+        ("out/a.css", ".a{color:red}"),
+    ]);
+    let output = run_in(
+        dir.path(),
+        &["prune", "out/*.css", "-c", "i.html", "-o", "out/"],
+        None,
+    );
+    assert_eq!(
+        stderr(&output),
+        "note: skipping 1 stylesheet(s) inside the output directory\n\
+         error: every matched stylesheet is inside the output directory out\n"
+    );
+}

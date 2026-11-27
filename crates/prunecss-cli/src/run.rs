@@ -270,8 +270,11 @@ fn css_inputs(settings: &PruneSettings, output: Option<&Path>) -> Result<Vec<Inp
     if skipped > 0 {
         eprintln!("note: skipping {skipped} stylesheet(s) inside the output directory");
     }
-    if files.is_empty() {
-        bail!("every matched stylesheet is inside the output directory");
+    if let Some(dir) = lexical_dir.filter(|_| files.is_empty()) {
+        bail!(
+            "every matched stylesheet is inside the output directory {}",
+            display(&dir)
+        );
     }
     Ok(files.into_iter().map(Input::File).collect())
 }

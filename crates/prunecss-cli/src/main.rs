@@ -142,7 +142,10 @@ struct ScanArgs {
 const STACK_SIZE: usize = 64 << 20;
 
 fn main() -> ExitCode {
-    // If the pool is already set up, keep it.
+    // `build_global` fails only if a global pool already exists, and nothing
+    // creates one before this first line of `main`. Were it ever to fail,
+    // rayon would keep the existing pool: the run still works, just without
+    // the larger stacks, so there is nothing better to do with the error.
     let _ = rayon::ThreadPoolBuilder::new()
         .stack_size(STACK_SIZE)
         .build_global();
