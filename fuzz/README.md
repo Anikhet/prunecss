@@ -56,7 +56,10 @@ The invariant checks skip inputs that hit a bug already reported, so
 fuzzing finds new bugs instead of the same one again and again. Panics are
 never skipped. The skips are `has_known_issue` and `same_output` in
 `src/lib.rs`. Each skip names its bug in `regressions/README.md`. When a bug
-is fixed, delete its skip.
+is fixed, delete its skip. `cargo test` in `fuzz/` checks that every file in
+`regressions/` is still skipped and that ordinary CSS (hex colours, Tailwind
+escapes such as `.\32 xl\:inset-0`, escapes in strings) is not; CI runs it on
+every pull request that touches the fuzz code.
 
 Two Cargo features turn on stricter checks that currently fail:
 

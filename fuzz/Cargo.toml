@@ -32,7 +32,7 @@ lightningcss = { version = "=1.0.0-alpha.72", default-features = false }
 
 [lib]
 path = "src/lib.rs"
-test = false
+# The unit tests check that the known-bug skips stay narrow (`cargo test`).
 doc = false
 
 [[bin]]

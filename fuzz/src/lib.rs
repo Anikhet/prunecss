@@ -147,7 +147,10 @@ pub fn check_removal_is_stable(css: &str, used: &BTreeSet<Cow<'_, str>>) {
         return;
     };
     let names = names_in(&once.css);
-    let all: BTreeSet<Cow<'_, str>> = names.iter().map(|name| Cow::Borrowed(name.as_str())).collect();
+    let all: BTreeSet<Cow<'_, str>> = names
+        .iter()
+        .map(|name| Cow::Borrowed(name.as_str()))
+        .collect();
     let again = prune(&once.css, &all, &minified()).unwrap_or_else(|err| {
         panic!(
             "pruned output no longer parses: {err}\noutput: {:?}",
@@ -220,7 +223,9 @@ fn has_token_merge_risk(css: &str) -> bool {
     });
     // `a/**/b`: a comment used as the only separator between two tokens.
     let comment_separator = css.match_indices("/*").any(|(start, _)| {
-        let before = bytes[..start].last().is_some_and(|c| !c.is_ascii_whitespace());
+        let before = bytes[..start]
+            .last()
+            .is_some_and(|c| !c.is_ascii_whitespace());
         let after = css[start + 2..]
             .find("*/")
             .and_then(|end| bytes.get(start + 2 + end + 2))
@@ -232,17 +237,43 @@ fn has_token_merge_risk(css: &str) -> bool {
 
 /// Whether `css` has a number of ten or more digits, or one with an
 /// exponent, either of which can overflow Lightning CSS's `i32`/`f32`.
+///
+/// Only digits that start a number token count for the exponent: in hex
+/// colours (`#1e3a8a`) and identifiers (`a1e5`, `x-1e3`) a `1e3` is not a
+/// number, so those inputs are still fuzzed.
 fn has_huge_number(css: &str) -> bool {
     let bytes = css.as_bytes();
     let long_run = bytes
         .split(|c| !c.is_ascii_digit())
         .any(|digits| digits.len() >= 10);
-    let exponent = bytes.windows(3).any(|w| {
-        w[0].is_ascii_digit()
-            && matches!(w[1], b'e' | b'E')
-            && (w[2].is_ascii_digit() || matches!(w[2], b'+' | b'-'))
+    let exponent = (0..bytes.len().saturating_sub(2)).any(|i| {
+        bytes[i].is_ascii_digit()
+            && matches!(bytes[i + 1], b'e' | b'E')
+            && (bytes[i + 2].is_ascii_digit() || matches!(bytes[i + 2], b'+' | b'-'))
+            && starts_number(bytes, i)
     });
     long_run || exponent
+}
+
+/// Whether the digit at `bytes[end]` belongs to a number token rather than
+/// to a hash (`#1e3`), an escape (`\31 e3`) or an identifier (`a1e3`).
+fn starts_number(bytes: &[u8], end: usize) -> bool {
+    let start = bytes[..end]
+        .iter()
+        .rposition(|c| !(c.is_ascii_digit() || *c == b'.'))
+        .map_or(0, |p| p + 1);
+    let Some(start) = start.checked_sub(1) else {
+        return true;
+    };
+    let is_name =
+        |c: u8| c == b'_' || c == b'#' || c == b'\\' || c.is_ascii_alphanumeric() || c >= 0x80;
+    match bytes[start] {
+        // A sign starts a number unless it continues an identifier (`x-1e3`).
+        b'-' | b'+' => !start
+            .checked_sub(1)
+            .is_some_and(|p| is_name(bytes[p]) || bytes[p] == b'-'),
+        c => !is_name(c),
+    }
 }
 
 /// Whether two outputs of the same input count as the same.
@@ -254,8 +285,10 @@ fn has_huge_number(css: &str) -> bool {
 /// - Bug 2: a comment inside unparsed tokens (custom property, unknown
 ///   property, unknown at-rule prelude or block) is dropped but the
 ///   whitespace around it is kept, so `--x: a /**/ b` minifies to
-///   `--x:a  b`, and a second pass collapses or trims it. Inputs with a
-///   comment are compared with all whitespace removed.
+///   `--x:a  b`, and a second pass collapses or trims it. For inputs with
+///   a comment, a space next to punctuation (`@x{ @y}`, `@o :;`) may also
+///   appear or vanish. A space between two other tokens still counts, so
+///   `.a .b` against `.a.b` is a difference.
 /// - Bugs 5 and 6: `@container name{…}` (no query) and `@media ,screen`
 ///   (an empty query in the list) gain a space on the next pass. So the
 ///   length of a whitespace run is ignored, but a space appearing or
@@ -268,26 +301,47 @@ fn same_output(input: &str, a: &str, b: &str) -> bool {
         return false;
     }
     if input.contains("/*") {
-        let squeeze = |s: &str| {
-            s.bytes()
-                .filter(|c| !c.is_ascii_whitespace())
-                .collect::<Vec<_>>()
-        };
-        return squeeze(a) == squeeze(b);
+        return without_space_at_punctuation(a) == without_space_at_punctuation(b);
     }
     a.split_ascii_whitespace().eq(b.split_ascii_whitespace())
+}
+
+/// `css` with whitespace runs collapsed to one space, and spaces next to
+/// `{ } ; : , ( )` or at either end removed.
+fn without_space_at_punctuation(css: &str) -> String {
+    let is_punctuation = |c: char| matches!(c, '{' | '}' | ';' | ':' | ',' | '(' | ')');
+    let words: Vec<&str> = css.split_ascii_whitespace().collect();
+    let mut out = String::with_capacity(css.len());
+    for (i, word) in words.iter().enumerate() {
+        if i > 0 {
+            let before = out.chars().next_back().is_some_and(is_punctuation);
+            let after = word.chars().next().is_some_and(is_punctuation);
+            if !(before || after) {
+                out.push(' ');
+            }
+        }
+        out.push_str(word);
+    }
+    out
 }
 
 /// Whether `css` has a backslash escape in an identifier that is not
 /// directly after `.` or `#` (so not a class or id name).
 ///
-/// A rough tokenizer: it also flags escapes in strings and values, which
-/// only means those inputs are skipped, never that a bug is hidden.
+/// A rough tokenizer: it skips quoted strings (the printer re-escapes
+/// those) and reads a hex escape with the one whitespace that ends it
+/// (`.\32 xl\:inset-0` is one class name). It still flags escapes in other
+/// values, which only means those inputs are skipped, never that a bug is
+/// hidden.
 fn escaped_identifier_outside_class_or_id(css: &str) -> bool {
     let bytes = css.as_bytes();
     let is_ident = |c: u8| c == b'-' || c == b'_' || c.is_ascii_alphanumeric() || c >= 0x80;
     let mut i = 0;
     while i < bytes.len() {
+        if matches!(bytes[i], b'"' | b'\'') {
+            i = string_end(bytes, i);
+            continue;
+        }
         if !(is_ident(bytes[i]) || bytes[i] == b'\\') {
             i += 1;
             continue;
@@ -297,7 +351,7 @@ fn escaped_identifier_outside_class_or_id(css: &str) -> bool {
         while i < bytes.len() {
             if bytes[i] == b'\\' {
                 escaped = true;
-                i += 2;
+                i = escape_end(bytes, i);
             } else if is_ident(bytes[i]) {
                 i += 1;
             } else {
@@ -310,6 +364,43 @@ fn escaped_identifier_outside_class_or_id(css: &str) -> bool {
         }
     }
     false
+}
+
+/// The index just past the escape that starts at `bytes[backslash]`: up to
+/// six hex digits and one optional whitespace (`\r\n` counts as one), or
+/// else the single escaped byte.
+fn escape_end(bytes: &[u8], backslash: usize) -> usize {
+    let hex = bytes[backslash + 1..]
+        .iter()
+        .take(6)
+        .take_while(|c| c.is_ascii_hexdigit())
+        .count();
+    if hex == 0 {
+        return backslash + 2;
+    }
+    let end = backslash + 1 + hex;
+    match bytes.get(end..) {
+        Some([b'\r', b'\n', ..]) => end + 2,
+        Some([b' ' | b'\t' | b'\n' | b'\r' | b'\x0c', ..]) => end + 1,
+        _ => end,
+    }
+}
+
+/// The index just past the string that starts with the quote at
+/// `bytes[open]`: after the closing quote, or at an unescaped newline or the
+/// end of input (CSS ends a bad string there).
+fn string_end(bytes: &[u8], open: usize) -> usize {
+    let quote = bytes[open];
+    let mut i = open + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'\n' | b'\r' | b'\x0c' => return i,
+            c if c == quote => return i + 1,
+            _ => i += 1,
+        }
+    }
+    bytes.len()
 }
 
 /// Every class and id name in `css`, unescaped, including names inside
@@ -379,5 +470,111 @@ fn collect_component(component: &Component<'_>, names: &mut BTreeSet<String>) {
             collect_selectors(std::slice::from_ref(selector), names);
         }
         _ => {}
+    }
+}
+
+// The skips must stay narrow: wide ones hide new bugs. These run with
+// `cargo test` in fuzz/ (stable is enough) and not with the stricter
+// features, under which the reproducers are meant to fail.
+#[cfg(all(test, not(feature = "no-skips"), not(feature = "pretty")))]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// Every file in `regressions/<dir>`, as `(name, bytes)`.
+    fn regressions(dir: &str) -> Vec<(String, Vec<u8>)> {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("regressions")
+            .join(dir);
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|err| panic!("reading {}: {err}", dir.display()))
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        files.sort();
+        assert!(!files.is_empty(), "no reproducers in {}", dir.display());
+        files
+            .into_iter()
+            .map(|path| {
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                (name, std::fs::read(&path).unwrap())
+            })
+            .collect()
+    }
+
+    fn passes(check: fn(&str, &BTreeSet<Cow<'_, str>>), data: &[u8]) -> bool {
+        let (css, content) = split_input(data);
+        std::panic::catch_unwind(|| check(&css, &used_names(&content))).is_ok()
+    }
+
+    #[test]
+    fn idempotence_reproducers_should_still_be_skipped() {
+        for (name, data) in regressions("prune_idempotent") {
+            assert!(
+                passes(check_idempotent, &data),
+                "{name} is no longer skipped"
+            );
+        }
+    }
+
+    #[test]
+    fn stability_reproducers_should_still_be_skipped() {
+        for (name, data) in regressions("prune_output_reparses") {
+            assert!(
+                passes(check_removal_is_stable, &data),
+                "{name} is no longer skipped"
+            );
+        }
+    }
+
+    #[test]
+    fn manual_reproducers_should_still_be_skipped() {
+        for (name, data) in regressions("manual") {
+            let (css, _) = split_input(&data);
+            assert!(has_known_issue(&css), "{name} is no longer skipped");
+        }
+    }
+
+    #[test]
+    fn has_known_issue_should_not_skip_hex_colours() {
+        assert!(!has_known_issue(".a{color:#1e3a8a}"));
+        assert!(!has_known_issue(".a{color:#1E3}"));
+    }
+
+    #[test]
+    fn has_known_issue_should_still_skip_exponents() {
+        assert!(has_known_issue(".a{height:1e20px}"));
+        assert!(has_known_issue(".a{height:-1.5e+9px}"));
+    }
+
+    #[test]
+    fn has_known_issue_should_not_skip_terminated_hex_escapes_in_class_names() {
+        assert!(!has_known_issue(".\\32 xl\\:inset-0{}"));
+    }
+
+    #[test]
+    fn has_known_issue_should_not_skip_escapes_in_strings() {
+        assert!(!has_known_issue("a{content:\"\\f101\"}"));
+        assert!(!has_known_issue("a{content:'\\'x\\a'}"));
+    }
+
+    #[test]
+    fn has_known_issue_should_still_skip_escaped_at_rule_names() {
+        assert!(has_known_issue("@\\61 b{}"));
+        assert!(has_known_issue("@media sbre\\/ and (max-width:1px){}"));
+    }
+
+    #[test]
+    fn same_output_should_catch_a_removed_descendant_combinator() {
+        assert!(!same_output("/* c */.a .b{}", ".a .b{}", ".a.b{}"));
+    }
+
+    #[test]
+    fn same_output_should_allow_bug_2_whitespace() {
+        assert!(same_output(
+            ".a{--x: a /**/ b}",
+            ".a{--x:a  b}",
+            ".a{--x:a b}"
+        ));
+        assert!(same_output("@x{/* c */ @y}", "@x{ @y}", "@x{@y}"));
     }
 }
