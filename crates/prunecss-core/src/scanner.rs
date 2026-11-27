@@ -96,12 +96,28 @@ fn collect<'t>(text: &'t str, emit: &mut impl FnMut(&'t str)) {
         &[Brackets::KeepWhole]
     };
     for &brackets in readings {
-        for token in Tokens::new(text, brackets) {
-            add_candidates(token, emit);
-            if let Some(unescaped) = after_js_escape(text, token) {
-                add_candidates(unescaped, emit);
+        let mut tokens = Tokens::new(text, brackets);
+        while let Some(token) = tokens.next() {
+            add_token(text, token, emit);
+            // Keeping `name-(…)` whole (Tailwind v4's `bg-(--brand)`) hides
+            // the tokens the text gave before, such as `x` in `a-(x)`.
+            // Re-reading just the grouped tokens without grouping restores
+            // them, so the readings only ever add names. Each such token is
+            // re-read once, so this stays linear.
+            if tokens.grouped_parens {
+                for part in Tokens::new(token, brackets).without_paren_groups() {
+                    add_token(text, part, emit);
+                }
             }
         }
+    }
+}
+
+/// Emits the candidates in `token`, a slice of `text`.
+fn add_token<'t>(text: &'t str, token: &'t str, emit: &mut impl FnMut(&'t str)) {
+    add_candidates(token, emit);
+    if let Some(unescaped) = after_js_escape(text, token) {
+        add_candidates(unescaped, emit);
     }
 }
 
@@ -311,7 +327,8 @@ fn decode_numeric(text: &str) -> Option<(char, usize)> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Brackets {
     /// Keep `[…]` groups whole, quotes included, as in Tailwind arbitrary
-    /// values (`bg-[url('/a.png')]`).
+    /// values (`bg-[url('/a.png')]`), and `-(…)` groups whole, as in
+    /// Tailwind v4 CSS-variable values (`bg-(--brand)`).
     KeepWhole,
     /// Keep `[…]` groups whole but end names at quotes, for names quoted
     /// inside a JavaScript array: `["w-[10px]", "p-4"]`. Without this, the
@@ -351,6 +368,11 @@ struct Tokens<'a> {
     source: &'a str,
     pos: usize,
     brackets: Brackets,
+    /// Whether a `(` right after `-` starts a group that soft delimiters do
+    /// not end, when brackets are kept whole.
+    paren_groups: bool,
+    /// Whether the last token returned contains such a group.
+    grouped_parens: bool,
 }
 
 impl<'a> Tokens<'a> {
@@ -359,6 +381,16 @@ impl<'a> Tokens<'a> {
             source,
             pos: 0,
             brackets,
+            paren_groups: true,
+            grouped_parens: false,
+        }
+    }
+
+    /// Splits at every `(` and `)` outside `[…]`, as JavaScript calls need.
+    fn without_paren_groups(self) -> Self {
+        Self {
+            paren_groups: false,
+            ..self
         }
     }
 }
@@ -369,7 +401,9 @@ impl<'a> Iterator for Tokens<'a> {
     fn next(&mut self) -> Option<&'a str> {
         let bytes = self.source.as_bytes();
         let mut depth = 0_usize;
+        let mut parens = 0_usize;
         let mut start = self.pos;
+        self.grouped_parens = false;
 
         while self.pos < bytes.len() {
             let byte = bytes[self.pos];
@@ -377,9 +411,10 @@ impl<'a> Iterator for Tokens<'a> {
                 is_quote(byte) && self.brackets == Brackets::KeepWhole && depth > 0;
             let ends_token =
                 if is_hard_delimiter(byte) || (is_quote(byte) && !quote_inside_brackets) {
-                    // A name never spans whitespace, so an unbalanced `[` cannot
-                    // swallow the rest of the file.
+                    // A name never spans whitespace, so an unbalanced `[` or
+                    // `(` cannot swallow the rest of the file.
                     depth = 0;
+                    parens = 0;
                     true
                 } else {
                     match self.brackets {
@@ -388,12 +423,34 @@ impl<'a> Iterator for Tokens<'a> {
                             is_soft_delimiter(byte) || matches!(byte, b'[' | b']' | b'+' | b'~')
                         }
                         Brackets::KeepWhole | Brackets::KeepWholeQuotesEnd => {
-                            match byte {
-                                b'[' => depth += 1,
-                                b']' => depth = depth.saturating_sub(1),
-                                _ => {}
-                            }
-                            depth == 0 && is_soft_delimiter(byte)
+                            // Tailwind v4 writes `name-(…)`, so only a `(` after
+                            // `-` opens a group; `fn(x)` and `clsx('a', b)` still
+                            // split. Inside a group every `(` nests, so
+                            // `w-(--w,calc(1px))` closes at the last `)`.
+                            let grouped = match byte {
+                                b'[' => {
+                                    depth += 1;
+                                    true
+                                }
+                                b']' => {
+                                    depth = depth.saturating_sub(1);
+                                    true
+                                }
+                                b'(' if self.paren_groups
+                                    && (parens > 0
+                                        || (self.pos > start && bytes[self.pos - 1] == b'-')) =>
+                                {
+                                    parens += 1;
+                                    self.grouped_parens = true;
+                                    true
+                                }
+                                b')' if parens > 0 => {
+                                    parens -= 1;
+                                    true
+                                }
+                                _ => depth > 0 || parens > 0,
+                            };
+                            !grouped && is_soft_delimiter(byte)
                         }
                     }
                 };
@@ -555,6 +612,16 @@ mod tests {
 
     // Third review: each of these deleted CSS a page uses.
     #[rstest]
+    #[case::tailwind_paren_value(r#"<p class="bg-(--brand)">"#, &["bg-(--brand)"])]
+    #[case::tailwind_paren_values(
+        r#"<p class="fill-(--x) max-w-(--breakpoint-md) supports-(--x):flex">"#,
+        &["fill-(--x)", "max-w-(--breakpoint-md)", "supports-(--x):flex"]
+    )]
+    #[case::tailwind_paren_in_js_array(r#"cx(["bg-(--x)", "p-4"])"#, &["bg-(--x)", "p-4"])]
+    #[case::tailwind_nested_parens(r#"<p class="w-(--w,calc(1px))">"#, &["w-(--w,calc(1px))"])]
+    #[case::tailwind_paren_parts_still_found(r#"<p class="bg-(--brand)">"#, &["bg-", "--brand"])]
+    #[case::clsx_call_with_parens("clsx('a', b)", &["a", "b", "clsx"])]
+    #[case::function_call("fn(x)", &["fn", "x"])]
     #[case::double_escaped_quotes(
         r#"<div data-x="&lt;p class=&amp;quot;badge&amp;quot;&gt;">"#,
         &["badge"]
@@ -563,6 +630,7 @@ mod tests {
     #[case::entity_colon(r#"<p class="hover&colon;underline">"#, &["hover:underline"])]
     #[case::entity_square_brackets(r#"<p class="w-&lsqb;10px&rsqb;">"#, &["w-[10px]"])]
     #[case::entity_brack_names(r#"<p class="w-&lbrack;10px&rbrack;">"#, &["w-[10px]"])]
+    #[case::entity_parens(r#"<p class="bg-&lpar;--x&rpar;">"#, &["bg-(--x)"])]
     #[case::entity_solidus(r#"<p class="w-1&sol;2">"#, &["w-1/2"])]
     #[case::entity_lowbar_and_num(r#"<p class="[&amp;&lowbar;p]:mt-2 &num;x">"#, &["[&_p]:mt-2", "x"])]
     #[case::entity_punctuation(
@@ -615,6 +683,11 @@ mod tests {
         );
     }
 
+    #[test]
+    fn extract_classes_should_not_let_an_unbalanced_paren_swallow_names() {
+        assert_finds(r#"<p class="bg-(--x a">b"#, &["a", "b"]);
+    }
+
     #[rstest]
     #[case::empty("")]
     #[case::only_delimiters(" \"'`<>={}();,\\$")]
@@ -653,6 +726,18 @@ mod tests {
                     prop_assert!(!name.bytes().any(|b| b.is_ascii_whitespace()));
                     // Quotes may appear inside `[…]` (`bg-[url('x')]`), backticks never.
                     prop_assert!(!name.contains('`'));
+                }
+            }
+
+            #[test]
+            // Grouping `-(…)` must only add names: every token the readings
+            // gave before grouping existed is still a candidate.
+            fn paren_groups_never_hide_tokens(source in r#"[a-c(),;\[\]'" -]{0,40}"#) {
+                let found = extract_classes(&source);
+                for brackets in [Brackets::KeepWhole, Brackets::KeepWholeQuotesEnd] {
+                    for token in Tokens::new(&source, brackets).without_paren_groups() {
+                        prop_assert!(found.contains(token), "missing {token:?}");
+                    }
                 }
             }
 

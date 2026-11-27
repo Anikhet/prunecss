@@ -806,3 +806,20 @@ fn prune_should_survive_deep_nesting_on_the_main_thread() {
     let output = run_in(dir.path(), &["prune", "d.css", "-c", "i.html"], None);
     assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
 }
+
+#[test]
+fn prune_should_keep_tailwind_v4_css_variable_classes() {
+    let dir = project(&[
+        ("i.html", r#"<p class="bg-(--brand) supports-(--x):flex">"#),
+        (
+            "t.css",
+            ".bg-\\(--brand\\){color:red}.supports-\\(--x\\)\\:flex{display:flex}.unused{color:blue}\n",
+        ),
+    ]);
+    let output = run_in(dir.path(), &["prune", "t.css", "-c", "i.html"], None);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        ".bg-\\(--brand\\) {\n  color: red;\n}\n\n.supports-\\(--x\\)\\:flex {\n  display: flex;\n}\n"
+    );
+}
