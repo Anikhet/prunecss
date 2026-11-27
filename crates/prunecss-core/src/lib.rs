@@ -20,5 +20,5 @@ pub use pruner::{
     ParseWarning, PruneError, PruneErrorKind, PruneOptions, PruneOutput, SourceLocation, UsedNames,
     defined_names, prune,
 };
-pub use safelist::{Pattern, PatternError, Safelist};
+pub use safelist::{Pattern, PatternError, PatternErrorKind, Safelist};
 pub use scanner::extract_classes;

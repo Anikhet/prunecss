@@ -44,9 +44,8 @@ impl Pattern {
     pub fn regex(source: &str) -> Result<Self, PatternError> {
         regex::Regex::new(source)
             .map(|regex| Self(Repr::Regex(regex)))
-            .map_err(|err| PatternError {
-                source: source.to_owned(),
-                message: err.to_string(),
+            .map_err(|err| {
+                PatternError::new(PatternErrorKind::InvalidRegex, source, err.to_string())
             })
     }
 
@@ -76,12 +75,13 @@ impl Pattern {
         }) else {
             return Ok(Self::exact(text));
         };
-        let error = |message: &str| PatternError {
-            source: text.to_owned(),
-            message: message.to_owned(),
-        };
+        let error =
+            |kind: PatternErrorKind, message: String| PatternError::new(kind, text, message);
         if source.is_empty() {
-            return Err(error("an empty regular expression would match every name"));
+            return Err(error(
+                PatternErrorKind::EmptyRegex,
+                "an empty regular expression would match every name".to_owned(),
+            ));
         }
         let mut builder = regex::RegexBuilder::new(source);
         for flag in flags.chars() {
@@ -92,16 +92,17 @@ impl Pattern {
                 'x' => builder.ignore_whitespace(true),
                 'U' => builder.swap_greed(true),
                 _ => {
-                    return Err(error(&format!(
-                        "unknown flag `{flag}`; use i, m, s, x or U"
-                    )));
+                    return Err(error(
+                        PatternErrorKind::UnknownFlag,
+                        format!("unknown flag `{flag}`; use i, m, s, x or U"),
+                    ));
                 }
             };
         }
         builder
             .build()
             .map(|regex| Self(Repr::Regex(regex)))
-            .map_err(|err| error(&err.to_string()))
+            .map_err(|err| error(PatternErrorKind::InvalidRegex, err.to_string()))
     }
 
     /// Returns `true` if `name` matches this pattern.
@@ -114,11 +115,55 @@ impl Pattern {
     }
 }
 
-/// An invalid [`Pattern::regex`] source.
+/// What was wrong with a pattern. See [`PatternError::kind`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PatternErrorKind {
+    /// The regular expression does not compile.
+    InvalidRegex,
+    /// `//`: an empty regular expression would match every name.
+    EmptyRegex,
+    /// A `/…/` pattern has a flag other than `i`, `m`, `s`, `x` or `U`.
+    UnknownFlag,
+}
+
+/// An invalid pattern, from [`Pattern::regex`] or [`Pattern::parse`].
+///
+/// Patterns are single strings, not stylesheets, so there is no source
+/// location: callers reading them from a file know where they came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatternError {
+    kind: PatternErrorKind,
     source: String,
     message: String,
+}
+
+impl PatternError {
+    fn new(kind: PatternErrorKind, source: &str, message: String) -> Self {
+        Self {
+            kind,
+            source: source.to_owned(),
+            message,
+        }
+    }
+
+    /// What kind of problem this was.
+    #[must_use]
+    pub fn kind(&self) -> PatternErrorKind {
+        self.kind
+    }
+
+    /// A description of the problem, without the pattern.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// The pattern as it was given.
+    #[must_use]
+    pub fn pattern(&self) -> &str {
+        &self.source
+    }
 }
 
 impl std::fmt::Display for PatternError {
@@ -275,6 +320,36 @@ mod tests {
     fn regex_pattern_should_reject_invalid_expressions() {
         let err = Pattern::regex("(unclosed").err().map(|e| e.to_string());
         assert!(err.is_some_and(|e| e.starts_with("invalid pattern `(unclosed`:")));
+    }
+
+    #[rstest]
+    #[case::invalid_regex("/(/", PatternErrorKind::InvalidRegex)]
+    #[case::empty_regex("//", PatternErrorKind::EmptyRegex)]
+    #[case::unknown_flag("/^a/q", PatternErrorKind::UnknownFlag)]
+    fn parse_errors_should_say_what_kind_of_problem_it_was(
+        #[case] text: &str,
+        #[case] expected: PatternErrorKind,
+    ) {
+        assert_eq!(
+            Pattern::parse(text).err().map(|err| err.kind()),
+            Some(expected)
+        );
+    }
+
+    #[test]
+    fn regex_errors_should_be_invalid_regex() {
+        let kind = Pattern::regex("(unclosed").err().map(|err| err.kind());
+        assert_eq!(kind, Some(PatternErrorKind::InvalidRegex));
+    }
+
+    #[test]
+    fn pattern_errors_should_keep_the_pattern_and_message_apart() {
+        let err = Pattern::parse("/^a/q").err();
+        let parts = err.as_ref().map(|err| (err.pattern(), err.message()));
+        assert_eq!(
+            parts,
+            Some(("/^a/q", "unknown flag `q`; use i, m, s, x or U"))
+        );
     }
 
     #[test]
