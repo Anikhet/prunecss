@@ -18,7 +18,7 @@ import { BENCH_DIR, REPO_DIR, sha256 } from './lib/util.mjs';
 import { corpora, contentFiles } from './lib/corpora.mjs';
 import { environment } from './lib/env.mjs';
 import { minify, sizes } from './lib/sizes.mjs';
-import { selectorSet, diffSets, classify, analyse, CATEGORIES } from './lib/selectors.mjs';
+import { selectorSet, diffSets, classify, analyse, listTrimmedForms, CATEGORIES } from './lib/selectors.mjs';
 import { Oracle, stripPseudos } from './lib/oracle.mjs';
 import { renderMarkdown } from './lib/report.mjs';
 import tailwindConfig from './config/purgecss-tailwind.config.mjs';
@@ -230,7 +230,9 @@ function correctness(corpus, files, outputs, minInput) {
       if (e.atRule || e.context.includes('&')) continue;
       const m = oracle.matches(e.selector);
       if (!m.match) continue;
-      const rewrittenTo = rewritten.get(strippedKey(e));
+      // PurgeCSS trims unused alternatives out of :is()/:where() lists; the
+      // shorter form is a rewrite, not a removal.
+      const rewrittenTo = rewritten.get(strippedKey(e)) ?? listTrimmedForms(e.selector).map((s) => rewritten.get(strippedKey({ context: e.context, selector: s }))).find(Boolean);
       hits.push({ key: k, selector: e.selector, context: e.context, approx: m.approx, category: rewrittenTo ? 'rewritten' : classify(e, inputSet, k), rewrittenTo, ...(words ? { notExtractedByPurgecss: names(e, scan, words).notExtractedByPurgecss } : { notScannedByPrunecss: names(e, scan, new Set()).notScannedByPrunecss }) });
     }
     result.falseRemovals[id] = {

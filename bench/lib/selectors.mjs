@@ -113,6 +113,39 @@ export function classify(entry, inputKeys, key) {
   return 'class';
 }
 
+const LISTS = new Set([':is', ':where', ':matches', ':-webkit-any', ':-moz-any']);
+
+/**
+ * Returns the forms a tool may print a selector in after trimming unused
+ * alternatives out of one `:is()`/`:where()` list: every shorter non-empty
+ * sub-list, and each single alternative unwrapped (PurgeCSS turns
+ * `:is(.alert,.toast) .close` into `.alert .close`). Lists are trimmed one at
+ * a time; lists longer than 8 only yield the single alternatives.
+ */
+export function listTrimmedForms(selector) {
+  const forms = [];
+  try {
+    const lists = [];
+    selectorParser((root) => {
+      root.walkPseudos((p) => {
+        if (LISTS.has(p.value.toLowerCase()) && p.nodes.length > 1) lists.push({ name: p.value, at: p.sourceIndex, text: String(p).trim(), args: p.nodes.map((n) => String(n).trim()) });
+      });
+    }).processSync(selector);
+    for (const { name, at, text, args } of lists) {
+      if (selector.slice(at, at + text.length) !== text) continue;
+      const replace = (by) => forms.push(selector.slice(0, at) + by + selector.slice(at + text.length));
+      for (const arg of args) replace(arg);
+      if (args.length > 8) continue;
+      for (let mask = 1; mask < (1 << args.length) - 1; mask++) {
+        replace(`${name}(${args.filter((_, i) => mask & (1 << i)).join(',')})`);
+      }
+    }
+  } catch {
+    // Unparsable selectors have no trimmed forms.
+  }
+  return forms;
+}
+
 /** Diffs two selector maps. Returns arrays of keys. */
 export function diffSets(a, b) {
   const onlyA = [];
