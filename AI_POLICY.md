@@ -5,9 +5,8 @@ contributions too. The full policy is in
 [CONTRIBUTING.md](CONTRIBUTING.md#ai-assisted-contributions); in short:
 
 - **The maintainer uses AI.** Much of the code is written together with
-  Claude Code. Commits it helped with carry a `Co-Authored-By` line, and
-  every change is reviewed by a human and passes the same tests, lints,
-  fuzzing and coverage gates as any other.
+  Claude Code. Every change is reviewed by a human and passes the same
+  tests, lints, fuzzing and coverage gates as any other.
 - **Disclose it.** Say in your pull request which tool you used and how much.
 - **You own every line.** Understand, test and be able to explain what you
   submit.
