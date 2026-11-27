@@ -10,7 +10,7 @@
 // this script refuses to continue if a download does not match. Generated
 // corpora use fixed seeds; their hashes are recorded too so drift (for
 // example from a different Tailwind version) is visible.
-import { copyFileSync, existsSync, readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -43,11 +43,24 @@ function check(corpus, key, actual) {
   }
 }
 
-function download(url, dest) {
-  if (existsSync(dest)) return;
+// Downloads `url` to `dest` unless a copy with the manifest's hash is already
+// there. A stale or corrupt copy (for example from an interrupted run or an
+// older pin) is deleted and fetched again instead of failing the check.
+function download(url, dest, corpus, key) {
+  const expected = manifest.corpora?.[corpus]?.files?.[key];
+  if (existsSync(dest)) {
+    if (expected && sha256File(dest) === expected) return;
+    console.log(`  ~ ${corpus}/${key}: ${expected ? 'hash mismatch' : 'not in manifest'}, downloading again`);
+    rmSync(dest);
+  }
   mkdirSync(dirname(dest), { recursive: true });
-  const r = spawnSync('curl', ['--fail', '-sSL', '--retry', '3', '-o', dest, url], { stdio: 'inherit' });
-  if (r.status !== 0) throw new Error(`download failed: ${url}`);
+  const part = `${dest}.part`;
+  const r = spawnSync('curl', ['--fail', '-sSL', '--retry', '3', '-o', part, url], { stdio: 'inherit' });
+  if (r.status !== 0) {
+    rmSync(part, { force: true });
+    throw new Error(`download failed: ${url}`);
+  }
+  renameSync(part, dest);
 }
 
 function npmFile(pkg, path) {
@@ -67,7 +80,7 @@ function npmVersion(pkg) {
   check('bootstrap', 'bootstrap.css', sha256File(join(dir, 'bootstrap.css')));
   for (const name of BOOTSTRAP_EXAMPLES) {
     const dest = join(dir, 'examples', name, 'index.astro');
-    download(`https://raw.githubusercontent.com/twbs/bootstrap/${BOOTSTRAP_TAG}/site/src/assets/examples/${name}/index.astro`, dest);
+    download(`https://raw.githubusercontent.com/twbs/bootstrap/${BOOTSTRAP_TAG}/site/src/assets/examples/${name}/index.astro`, dest, 'bootstrap', `examples/${name}/index.astro`);
     check('bootstrap', `examples/${name}/index.astro`, sha256File(dest));
   }
   next.corpora.bootstrap.source = { css: `npm:bootstrap@${npmVersion('bootstrap')}/dist/css/bootstrap.css`, content: `github:twbs/bootstrap@${BOOTSTRAP_TAG}/site/src/assets/examples/*/index.astro` };
@@ -82,7 +95,7 @@ function npmVersion(pkg) {
   check('bulma', 'bulma.css', sha256File(join(dir, 'bulma.css')));
   for (const page of BULMA_DOCS) {
     const dest = join(dir, 'docs', `${page}.html`);
-    download(`https://raw.githubusercontent.com/jgthms/bulma/${BULMA_TAG}/docs/documentation/${page}.html`, dest);
+    download(`https://raw.githubusercontent.com/jgthms/bulma/${BULMA_TAG}/docs/documentation/${page}.html`, dest, 'bulma', `docs/${page}.html`);
     check('bulma', `docs/${page}.html`, sha256File(dest));
   }
   next.corpora.bulma.source = { css: `npm:bulma@${npmVersion('bulma')}/css/bulma.css`, content: `github:jgthms/bulma@${BULMA_TAG}/docs/documentation/**/*.html` };
