@@ -195,17 +195,25 @@ release-plz, so the format matters.
 <optional body: what changed and why>
 ```
 
-Types:
+Types, and the changelog section each one lands in (this mirrors
+`commit_parsers` in [`release-plz.toml`](release-plz.toml)):
 
-| Type       | Use for                                   | In changelog |
-| ---------- | ----------------------------------------- | ------------ |
-| `feat`     | a new feature                             | yes          |
-| `fix`      | a bug fix                                 | yes          |
-| `perf`     | a speed or memory improvement             | yes          |
-| `docs`     | documentation only                        | sometimes    |
-| `refactor` | code change with no behaviour change      | no           |
-| `test`     | adding or fixing tests                    | no           |
-| `chore`    | build, CI, dependencies, tooling          | no           |
+| Type | Use for | Changelog section |
+| --- | --- | --- |
+| `feat` | a new feature | Added |
+| `perf` | a speed or memory improvement | Changed |
+| `refactor` | a code change with no behaviour change | Changed |
+| `deprecate` | marking something for later removal | Deprecated |
+| `remove` | removing a feature or option | Removed |
+| `fix` | a bug fix | Fixed |
+| `security` | a security fix | Security |
+| `chore(deps)`, `build(deps)` | dependency updates (Dependabot) | Dependencies |
+| `docs` | documentation only | not listed |
+| `ci`, `test`, `style`, `chore`, `build` | CI, tests, formatting, tooling | not listed |
+| anything else | | Changed |
+
+A commit whose body mentions "security" is listed under Security whatever
+its type.
 
 Add `!` after the type for a breaking change, and explain it in the body:
 
