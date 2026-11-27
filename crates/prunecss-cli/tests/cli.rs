@@ -823,3 +823,29 @@ fn prune_should_keep_tailwind_v4_css_variable_classes() {
         ".bg-\\(--brand\\) {\n  color: red;\n}\n\n.supports-\\(--x\\)\\:flex {\n  display: flex;\n}\n"
     );
 }
+
+// ---- Third review: file identity, symlinks, pipes, precedence ------------
+
+#[test]
+fn output_should_refuse_to_overwrite_a_hard_linked_input() {
+    let dir = project(&[
+        ("i.html", r#"<p class="a">"#),
+        ("styles/a.css", ".a{color:red}.zz{color:red}"),
+    ]);
+    std::fs::create_dir(dir.path().join("out")).unwrap();
+    std::fs::hard_link(
+        dir.path().join("styles/a.css"),
+        dir.path().join("out/a.css"),
+    )
+    .unwrap();
+    let output = run_in(
+        dir.path(),
+        &["prune", "styles/*.css", "-c", "i.html", "-o", "out/"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert_eq!(
+        read(&dir.path().join("styles/a.css")),
+        ".a{color:red}.zz{color:red}"
+    );
+}

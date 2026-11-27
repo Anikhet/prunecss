@@ -132,6 +132,7 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
 
     let content_files = content_files(&settings.content, settings.gitignore)?;
     let sources = read_all(&content_files)?;
+    check_destinations(&destinations, &inputs)?;
     let used = used_names(&sources);
     if used.is_empty() {
         bail!(
@@ -338,10 +339,7 @@ fn plan_outputs(
                 display(destination)
             );
         }
-        let overwrites = input_paths
-            .iter()
-            .any(|input| same_file(input, destination));
-        if overwrites {
+        if input_paths.contains(destination) {
             bail!(
                 "refusing to overwrite the input {}; choose a different --output",
                 display(destination)
@@ -364,14 +362,75 @@ fn common_parent(paths: &[PathBuf]) -> Option<PathBuf> {
     Some(common)
 }
 
-/// Lexically equal, or the same file on disk (symlinks, case-insensitive
-/// file systems).
-fn same_file(a: &Path, b: &Path) -> bool {
-    a == b
-        || matches!(
-            (a.canonicalize(), b.canonicalize()),
-            (Ok(a), Ok(b)) if a == b
-        )
+/// Refuses a plan that would replace an input, before anything is written.
+///
+/// Files are compared by identity (device and inode on Unix, volume and file
+/// index on Windows), which also catches symlinks, hard links and other
+/// spellings of the same file on case-insensitive file systems.
+fn check_destinations(destinations: &[Option<PathBuf>], inputs: &[Input]) -> Result<()> {
+    let mut existing = Vec::new();
+    for destination in destinations.iter().flatten() {
+        match same_file::Handle::from_path(destination) {
+            Ok(handle) => existing.push(Existing {
+                path: destination,
+                handle,
+            }),
+            // Nothing there yet, so nothing to overwrite.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).with_context(|| format!("checking {}", display(destination)));
+            }
+        }
+    }
+    if existing.is_empty() {
+        return Ok(());
+    }
+    let input_files: Vec<&PathBuf> = inputs
+        .iter()
+        .filter_map(|input| match input {
+            Input::File(path) => Some(path),
+            Input::Stdin => None,
+        })
+        .collect();
+    if let Some((destination, input)) = overwritten(&existing, &input_files) {
+        bail!(
+            "refusing to overwrite the input {}; choose a different --output",
+            same_as(destination, input)
+        );
+    }
+    Ok(())
+}
+
+/// Names a file, and the other path it is reached by if that differs.
+fn same_as(destination: &Path, file: &Path) -> String {
+    let (destination, file) = (display(destination), display(file));
+    if destination == file {
+        file
+    } else {
+        format!("{file} (it is the same file as {destination})")
+    }
+}
+
+/// The first of `files` that an existing destination is the same file as,
+/// with that destination. A file that can't be opened is skipped: reading
+/// it fails later anyway.
+fn overwritten<'a, 'f>(
+    existing: &[Existing<'a>],
+    files: &[&'f PathBuf],
+) -> Option<(&'a Path, &'f Path)> {
+    files.par_iter().find_map_first(|file| {
+        let handle = same_file::Handle::from_path(file).ok()?;
+        existing
+            .iter()
+            .find(|found| found.handle == handle)
+            .map(|found| (found.path.as_path(), file.as_path()))
+    })
+}
+
+/// A planned destination that already exists.
+struct Existing<'a> {
+    path: &'a PathBuf,
+    handle: same_file::Handle,
 }
 
 /// Expands the content patterns, refusing to continue without any files:

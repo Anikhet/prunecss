@@ -32,6 +32,8 @@ ignore = "0.4.35"
 globset = "0.4.22"
 rayon = "1.12"
 rustc-hash = "2.1"
+# File identity (device + inode, or volume + file index on Windows).
+same-file = "1.0.6"
 tempfile = "3.27"
 # Lightning CSS has never left 1.0.0-alpha; pin exactly so upgrades are deliberate.
 lightningcss = { version = "=1.0.0-alpha.72", default-features = false }
