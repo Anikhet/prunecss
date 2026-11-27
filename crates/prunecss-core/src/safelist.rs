@@ -12,12 +12,16 @@
 /// assert!(Pattern::regex("^btn-")?.matches("btn-primary"));
 /// # Ok::<(), prunecss_core::PatternError>(())
 /// ```
+///
+/// How a pattern is stored is private, so the regex engine can change
+/// without breaking callers.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub enum Pattern {
-    /// Matches exactly this name.
+pub struct Pattern(Repr);
+
+#[derive(Debug, Clone)]
+enum Repr {
     Exact(String),
-    /// Matches any name the regular expression finds a match in.
     Regex(regex::Regex),
 }
 
@@ -25,7 +29,7 @@ impl Pattern {
     /// A pattern matching exactly `name`.
     #[must_use]
     pub fn exact(name: impl Into<String>) -> Self {
-        Self::Exact(name.into())
+        Self(Repr::Exact(name.into()))
     }
 
     /// A pattern matching names in which the regular expression `source`
@@ -39,7 +43,7 @@ impl Pattern {
     /// Returns [`PatternError`] if `source` is not a valid regular expression.
     pub fn regex(source: &str) -> Result<Self, PatternError> {
         regex::Regex::new(source)
-            .map(Self::Regex)
+            .map(|regex| Self(Repr::Regex(regex)))
             .map_err(|err| PatternError {
                 source: source.to_owned(),
                 message: err.to_string(),
@@ -96,16 +100,16 @@ impl Pattern {
         }
         builder
             .build()
-            .map(Self::Regex)
+            .map(|regex| Self(Repr::Regex(regex)))
             .map_err(|err| error(&err.to_string()))
     }
 
     /// Returns `true` if `name` matches this pattern.
     #[must_use]
     pub fn matches(&self, name: &str) -> bool {
-        match self {
-            Self::Exact(exact) => exact == name,
-            Self::Regex(regex) => regex.is_match(name),
+        match &self.0 {
+            Repr::Exact(exact) => exact == name,
+            Repr::Regex(regex) => regex.is_match(name),
         }
     }
 }
