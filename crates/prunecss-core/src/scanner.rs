@@ -43,12 +43,18 @@ pub fn extract_classes(source: &str) -> BTreeSet<Cow<'_, str>> {
     let mut sorted: BTreeSet<Cow<'_, str>> =
         names.iter().map(|name| Cow::Borrowed(*name)).collect();
     // Server-rendered HTML escapes attribute text (`[&amp;_p]:mt-2`,
-    // `class=&quot;badge&quot;`). Scan a decoded copy as well; the few names
-    // that only exist after decoding are the only ones that get copied.
-    if let Some(decoded) = decode_entities(source) {
+    // `class=&quot;badge&quot;`), sometimes twice when escaped markup is put
+    // inside another attribute (`&amp;quot;`). Scan decoded copies as well,
+    // decoding again until nothing changes; the few names that only exist
+    // after decoding are the only ones that get copied.
+    let mut decoded = decode_entities(source);
+    for pass in 1..=MAX_DECODE_PASSES {
+        let Some(text) = decoded else { break };
         let mut decoded_names: FxHashSet<&str> = FxHashSet::default();
-        collect(&decoded, &mut |name| {
-            if !names.contains(name) {
+        collect(&text, &mut |name| {
+            // `sorted` also holds what earlier passes found, so a name
+            // found again is not copied again.
+            if !names.contains(name) && !sorted.contains(name) {
                 decoded_names.insert(name);
             }
         });
@@ -57,9 +63,19 @@ pub fn extract_classes(source: &str) -> BTreeSet<Cow<'_, str>> {
                 .iter()
                 .map(|name| Cow::Owned((*name).to_owned())),
         );
+        decoded = if pass < MAX_DECODE_PASSES {
+            decode_entities(&text)
+        } else {
+            None
+        };
     }
     sorted
 }
+
+/// How many times escaped text is decoded. Markup escaped three times is
+/// already rare; the cap bounds the work on text like `&amp;amp;amp;…`,
+/// which would otherwise need one full pass per `amp;`.
+const MAX_DECODE_PASSES: usize = 3;
 
 /// Emits every candidate in `text`.
 fn collect<'t>(text: &'t str, emit: &mut impl FnMut(&'t str)) {
@@ -502,6 +518,11 @@ mod tests {
 
     // Third review: each of these deleted CSS a page uses.
     #[rstest]
+    #[case::double_escaped_quotes(
+        r#"<div data-x="&lt;p class=&amp;quot;badge&amp;quot;&gt;">"#,
+        &["badge"]
+    )]
+    #[case::double_escaped_ampersand(r#"<p class="[&amp;amp;_p]:mt-2">"#, &["[&_p]:mt-2"])]
     #[case::entity_colon(r#"<p class="hover&colon;underline">"#, &["hover:underline"])]
     #[case::entity_square_brackets(r#"<p class="w-&lsqb;10px&rsqb;">"#, &["w-[10px]"])]
     #[case::entity_brack_names(r#"<p class="w-&lbrack;10px&rbrack;">"#, &["w-[10px]"])]
@@ -535,6 +556,22 @@ mod tests {
         // `hover` and `underline` are in the raw text, so only the joined
         // name is copied.
         assert_eq!(owned, vec!["hover:underline"]);
+    }
+
+    #[test]
+    fn extract_classes_should_stop_decoding_after_a_few_passes() {
+        // Each pass decodes one legacy `&amp`; the fourth is never run.
+        let found = extract_classes("x&ampampampamplty");
+        let names: Vec<&str> = found.iter().map(AsRef::as_ref).collect();
+        assert_eq!(
+            names,
+            vec![
+                "x&ampampampamplty",
+                "x&ampampamplty",
+                "x&ampamplty",
+                "x&amplty"
+            ]
+        );
     }
 
     #[rstest]
