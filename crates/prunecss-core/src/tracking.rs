@@ -11,7 +11,7 @@
 //! inspection, nothing is removed.
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lightningcss::declaration::DeclarationBlock;
 use lightningcss::properties::Property;
@@ -53,18 +53,24 @@ pub(crate) fn remove_unused<R: ToCss>(
     enabled: Enabled,
 ) -> Removed {
     let mut removed = Removed::default();
+    if !(enabled.variables || enabled.keyframes || enabled.font_face) {
+        return removed;
+    }
+    let Some(references) = References::collect(rules) else {
+        return removed;
+    };
 
     // Variables first: a keyframe or font named only inside a variable that
     // nobody reads is itself unused.
-    if enabled.variables
-        && let Some(live) = live_variables(rules, used, safelist)
-    {
-        removed.variables = remove_dead_variables(rules, &live);
+    let live = enabled
+        .variables
+        .then(|| live_variables(&references, used, safelist));
+    let text = references.into_text(live.as_ref());
+    if let Some(live) = &live {
+        removed.variables = remove_dead_variables(rules, live);
     }
 
-    if (enabled.keyframes || enabled.font_face)
-        && let Some(text) = reference_text(rules)
-    {
+    if enabled.keyframes || enabled.font_face {
         let tokens = extract_classes(&text);
         let lowered = text.to_ascii_lowercase();
         retain_rules(rules, &mut |rule| match rule {
@@ -139,9 +145,11 @@ fn font_face_is_referenced(
 /// Visits every declaration block in kept rules, including nested rules and
 /// keyframe steps. `@font-face` descriptors are not visited: a font face does
 /// not refer to itself.
+///
+/// `visit` is told whether the block is a keyframe step.
 fn for_each_block<'a, R>(
     rules: &'a CssRuleList<'_, R>,
-    visit: &mut impl FnMut(&'a DeclarationBlock<'_>),
+    visit: &mut impl FnMut(&'a DeclarationBlock<'_>, bool),
 ) {
     for rule in &rules.0 {
         if let Some(group) = rules::group_rules(rule) {
@@ -150,17 +158,17 @@ fn for_each_block<'a, R>(
         }
         match rule {
             CssRule::Style(style) => {
-                visit(&style.declarations);
+                visit(&style.declarations, false);
                 for_each_block(&style.rules, visit);
             }
             CssRule::Nesting(nesting) => {
-                visit(&nesting.style.declarations);
+                visit(&nesting.style.declarations, false);
                 for_each_block(&nesting.style.rules, visit);
             }
-            CssRule::NestedDeclarations(nested) => visit(&nested.declarations),
+            CssRule::NestedDeclarations(nested) => visit(&nested.declarations, false),
             CssRule::Keyframes(keyframes) => {
                 for keyframe in &keyframes.keyframes {
-                    visit(&keyframe.declarations);
+                    visit(&keyframe.declarations, true);
                 }
             }
             CssRule::LayerBlock(layer) => for_each_block(&layer.rules, visit),
@@ -186,23 +194,70 @@ fn defined_variable<'a>(property: &'a Property<'_>) -> Option<&'a str> {
     }
 }
 
-/// All declaration values of kept rules, one per line. `None` if any value
-/// cannot be printed, in which case callers must not remove anything.
-fn reference_text<R: ToCss>(rules: &CssRuleList<'_, R>) -> Option<String> {
-    let mut text = String::new();
-    let mut complete = true;
-    for_each_block(rules, &mut |block| {
-        for property in properties(block) {
-            match property.value_to_css_string(PrinterOptions::default()) {
-                Ok(value) => {
-                    text.push_str(&value);
-                    text.push('\n');
+/// A custom property declaration in a kept rule.
+struct Definition<'a> {
+    /// The unescaped name, with its `--`.
+    name: &'a str,
+    /// The printed value.
+    value: String,
+    /// `false` in keyframe steps, which variable tracking never touches.
+    removable: bool,
+}
+
+/// Every printed declaration value of the kept rules, printed once and
+/// shared by variable, keyframe and font tracking.
+struct References<'a> {
+    /// Values that are not custom property definitions, plus the text of
+    /// everything outside declaration blocks, one per line.
+    readers: String,
+    definitions: Vec<Definition<'a>>,
+}
+
+impl<'a> References<'a> {
+    /// `None` if any value cannot be printed, in which case callers must
+    /// not remove anything.
+    fn collect<R: ToCss>(rules: &'a CssRuleList<'_, R>) -> Option<Self> {
+        let mut readers = String::new();
+        let mut definitions = Vec::new();
+        let mut complete = true;
+        for_each_block(rules, &mut |block, in_keyframes| {
+            for property in properties(block) {
+                let Ok(value) = property.value_to_css_string(PrinterOptions::default()) else {
+                    complete = false;
+                    continue;
+                };
+                if let Some(name) = defined_variable(property) {
+                    definitions.push(Definition {
+                        name,
+                        value,
+                        removable: !in_keyframes,
+                    });
+                } else {
+                    readers.push_str(&value);
+                    readers.push('\n');
                 }
-                Err(_) => complete = false,
+            }
+        });
+        (complete && other_reference_text(rules, &mut readers)).then_some(Self {
+            readers,
+            definitions,
+        })
+    }
+
+    /// All values that remain once the variables not in `live` are removed
+    /// (all of them if `live` is `None`), one per line.
+    fn into_text(self, live: Option<&BTreeSet<String>>) -> String {
+        let mut text = self.readers;
+        for definition in self.definitions {
+            let kept =
+                !definition.removable || live.is_none_or(|live| live.contains(definition.name));
+            if kept {
+                text.push_str(&definition.value);
+                text.push('\n');
             }
         }
-    });
-    (complete && other_reference_text(rules, &mut text)).then_some(text)
+        text
+    }
 }
 
 /// Appends the text of everything outside ordinary declaration blocks that
@@ -254,10 +309,8 @@ fn other_reference_text<R: ToCss>(rules: &CssRuleList<'_, R>, text: &mut String)
 
 /// `--name` identifiers in `text`, unescaped so they compare equal to
 /// parsed names: the `--brand` in `var(--brand, red)`, `--a.b` for `--a\.b`.
-fn variable_references(text: &str) -> impl Iterator<Item = String> {
-    identifiers(text)
-        .filter(|name| name.starts_with("--") && name.len() > 2)
-        .map(Cow::into_owned)
+fn variable_references(text: &str) -> impl Iterator<Item = Cow<'_, str>> {
+    identifiers(text).filter(|name| name.starts_with("--") && name.len() > 2)
 }
 
 /// Works out which custom properties something still reads.
@@ -265,56 +318,44 @@ fn variable_references(text: &str) -> impl Iterator<Item = String> {
 /// Readers are ordinary declarations, the content files and the safelist.
 /// A variable read only by another variable is live only if that one is,
 /// so chains are followed until nothing new is reached.
-fn live_variables<R: ToCss>(
-    rules: &CssRuleList<'_, R>,
+fn live_variables(
+    references: &References<'_>,
     used: &impl UsedNames,
     safelist: &Safelist,
-) -> Option<BTreeSet<String>> {
-    let mut definitions: Vec<(String, String)> = Vec::new();
-    let mut reader_text = String::new();
-    let mut complete = true;
-
-    for_each_block(rules, &mut |block| {
-        for property in properties(block) {
-            let Ok(value) = property.value_to_css_string(PrinterOptions::default()) else {
-                complete = false;
-                continue;
-            };
-            if let Some(name) = defined_variable(property) {
-                definitions.push((name.to_owned(), value));
-            } else {
-                reader_text.push_str(&value);
-                reader_text.push('\n');
-            }
-        }
-    });
-    if !complete || !other_reference_text(rules, &mut reader_text) {
-        return None;
+) -> BTreeSet<String> {
+    // Indexed by name so each live variable looks up only its own
+    // definitions: a scan per name is quadratic on long chains.
+    let mut values: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for definition in &references.definitions {
+        values
+            .entry(definition.name)
+            .or_default()
+            .push(&definition.value);
     }
 
-    let mut live: BTreeSet<String> = variable_references(&reader_text).collect();
+    let mut live: BTreeSet<Cow<'_, str>> = variable_references(&references.readers).collect();
     live.extend(
-        definitions
-            .iter()
-            .map(|(name, _)| name)
+        values
+            .keys()
             .filter(|name| {
                 used.contains_name(name)
                     || any_matches(&safelist.variables, name.trim_start_matches("--"))
             })
-            .cloned(),
+            .map(|name| Cow::Borrowed(*name)),
     );
 
-    let mut pending: Vec<String> = live.iter().cloned().collect();
+    let mut pending: Vec<Cow<'_, str>> = live.iter().cloned().collect();
     while let Some(name) = pending.pop() {
-        for (_, value) in definitions.iter().filter(|(defined, _)| *defined == name) {
+        for value in values.get(name.as_ref()).into_iter().flatten() {
             for reference in variable_references(value) {
-                if live.insert(reference.clone()) {
+                if !live.contains(&reference) {
+                    live.insert(reference.clone());
                     pending.push(reference);
                 }
             }
         }
     }
-    Some(live)
+    live.into_iter().map(Cow::into_owned).collect()
 }
 
 /// Identifiers in `text` (runs of name characters and escapes), unescaped.
@@ -494,6 +535,8 @@ fn retain_rules<'i, R>(
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::fmt::Write as _;
+    use std::time::{Duration, Instant};
 
     use rstest::rstest;
 
@@ -597,5 +640,26 @@ mod tests {
             prune_with(css, &["My.Font"], &options).removed_font_faces,
             0
         );
+    }
+
+    #[test]
+    fn variables_should_follow_long_chains_quickly() {
+        const LENGTH: usize = 20_000;
+        let mut chain = String::new();
+        for i in 1..LENGTH {
+            write!(chain, "--v{i}:var(--v{});", i - 1).unwrap();
+        }
+        let css = format!(
+            ":root{{--v0:red;{chain}--dead:blue}}.a{{color:var(--v{})}}",
+            LENGTH - 1
+        );
+        let options = PruneOptions::default().variables(true);
+
+        let start = Instant::now();
+        let removed = prune_with(&css, &["a"], &options).removed_variables;
+        let elapsed = start.elapsed();
+
+        assert_eq!(removed, 1);
+        assert!(elapsed < Duration::from_secs(2), "took {elapsed:?}");
     }
 }
