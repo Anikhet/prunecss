@@ -263,7 +263,18 @@ impl std::error::Error for PruneError {}
 /// # Errors
 ///
 /// Returns a [`PruneErrorKind::Parse`] error if the stylesheet is too broken
-/// to recover, and a [`PruneErrorKind::Print`] error if printing fails.
+/// to recover or nests blocks (rules, at-rules, `:is(`, functions) more
+/// than 40 levels deep, and a [`PruneErrorKind::Print`] error if printing
+/// fails.
+///
+/// # Stack use
+///
+/// Parsing and printing recurse once per nesting level. The depth limit
+/// keeps the deepest accepted stylesheet within about 1 MiB of stack in a
+/// debug build (less in release), so `prune` is safe on the 2 MiB stack
+/// Rust gives spawned threads and `cargo test`. Call it with less than
+/// about 1 MiB of stack to spare and deeply nested input can still
+/// overflow.
 ///
 /// ```
 /// use std::collections::BTreeSet;
@@ -374,8 +385,14 @@ fn unmask_placeholders(code: String, masked: bool) -> String {
 }
 
 /// Deeper nesting than this is refused. Real stylesheets nest a handful of
-/// levels; thousands overflow the stack in the parser and abort the process.
-const MAX_NESTING: usize = 100;
+/// levels; too many overflow the stack in the parser and abort the process.
+///
+/// Measured in a debug build on a 2 MiB thread with every option on, the
+/// costliest construct, nested `@media` (about 24 KiB of stack per level),
+/// overflows at 88 levels; 40 leaves more than half the stack free. The
+/// `..._on_a_2_mib_stack` tests prove it for each kind of nesting. Keep
+/// the number in [`prune`]'s docs in sync.
+const MAX_NESTING: usize = 40;
 
 type WarningSink<'i> = Arc<RwLock<Vec<lightningcss::error::Error<ParserError<'i>>>>>;
 
@@ -2034,9 +2051,17 @@ mod tests {
     /// shows up as this test binary aborting rather than passing by luck on
     /// a big main-thread stack.
     fn prune_on_small_stack(css: String) -> Result<PruneOutput, PruneError> {
+        prune_on_stack(css, 4 * 1024 * 1024, PruneOptions::default())
+    }
+
+    fn prune_on_stack(
+        css: String,
+        stack_size: usize,
+        options: PruneOptions,
+    ) -> Result<PruneOutput, PruneError> {
         std::thread::Builder::new()
-            .stack_size(4 * 1024 * 1024)
-            .spawn(move || prune(&css, &BTreeSet::from(["a"]), &PruneOptions::default()))
+            .stack_size(stack_size)
+            .spawn(move || prune(&css, &BTreeSet::from(["a"]), &options))
             .unwrap_or_else(|err| panic!("could not spawn: {err}"))
             .join()
             .unwrap_or_else(|_| panic!("prune panicked"))
@@ -2088,12 +2113,93 @@ mod tests {
         assert_eq!(prune_on_small_stack(css).map(|_| ()), Ok(()));
     }
 
+    /// A stylesheet whose deepest block is `depth` levels down (rounded
+    /// down to what `kind` can express).
+    fn nested(kind: &str, depth: usize) -> String {
+        // (before, repeated opener, levels it opens, inner, closer, after,
+        // levels the rest adds)
+        let (before, open, per_open, inner, close, after, extra) = match kind {
+            "rules" => ("", ".a{", 1, "color:red", "}", "", 0),
+            "media" => ("", "@media print{", 1, ".a{color:red}", "}", "", 1),
+            "supports" => ("", "@supports (color:red){", 1, ".a{color:red}", "}", "", 1),
+            "container" => (
+                "",
+                "@container (width>1px){",
+                1,
+                ".a{color:red}",
+                "}",
+                "",
+                1,
+            ),
+            "scope" => ("", "@scope (.a){", 1, ".a{color:red}", "}", "", 1),
+            "media_in_rules" => ("", ".a{@media print{", 2, "color:red", "}}", "", 0),
+            "is" => ("", ":is(", 1, ".a", ")", "{color:red}", 0),
+            "has" => (".a", ":has(", 1, ".a", ")", "{color:red}", 0),
+            "nth_of" => ("", ":nth-child(1 of ", 1, ".a", ")", "{color:red}", 0),
+            "calc" => (".a{width:", "calc(", 1, "1px", ")", "}", 1),
+            _ => panic!("unknown kind {kind}"),
+        };
+        let repeat = (depth - extra) / per_open;
+        format!(
+            "{before}{}{inner}{}{after}",
+            open.repeat(repeat),
+            close.repeat(repeat)
+        )
+    }
+
+    // Third review: 100 levels of `@media` overflowed the 2 MiB stack that
+    // `cargo test` and spawned threads get by default, in debug builds.
+    // The allowed depth must be safe there, with every option on.
+    #[rstest]
+    fn prune_should_handle_the_deepest_allowed_nesting_on_a_2_mib_stack(
+        #[values(
+            "rules",
+            "media",
+            "supports",
+            "container",
+            "scope",
+            "media_in_rules",
+            "is",
+            "has",
+            "nth_of",
+            "calc"
+        )]
+        kind: &str,
+    ) {
+        let css = nested(kind, MAX_NESTING);
+        assert_eq!(
+            (
+                exceeds_nesting(&css, MAX_NESTING - 1),
+                exceeds_nesting(&css, MAX_NESTING)
+            ),
+            (true, false)
+        );
+        let options = PruneOptions::default()
+            .keyframes(true)
+            .font_face(true)
+            .variables(true);
+        let output = prune_on_stack(css, 2 * 1024 * 1024, options);
+        assert_eq!(output.map(|_| ()), Ok(()));
+    }
+
+    #[rstest]
+    fn prune_should_refuse_one_level_more_than_allowed(
+        #[values("rules", "media", "is", "media_in_rules")] kind: &str,
+    ) {
+        let css = nested(kind, MAX_NESTING + 2);
+        let err = prune_on_stack(css, 2 * 1024 * 1024, PruneOptions::default()).err();
+        assert_eq!(
+            err.map(|err| err.message().contains("nested more than")),
+            Some(true)
+        );
+    }
+
     #[test]
     fn prune_should_accept_ordinary_nesting_depth() {
         let css = format!(
             "{}.a{{color:red}}{}",
-            "@media print{".repeat(50),
-            "}".repeat(50)
+            "@media print{".repeat(20),
+            "}".repeat(20)
         );
         assert!(prune_min(&css, &["a"]).contains(".a{color:red}"));
     }
