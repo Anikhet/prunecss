@@ -77,6 +77,14 @@ release-plz inserts each new release right below `## [Unreleased]`, so
 anything left under that heading would end up inside the next generated
 release section.
 
+Once that PR is merged, update your local checkout so the publish and tag
+commands below run on the merged notes:
+
+```bash
+git switch main
+git pull --ff-only origin main
+```
+
 The library has to exist before the CLI that depends on it:
 
 ```bash
