@@ -967,3 +967,55 @@ fn output_should_name_the_directory_when_every_stylesheet_is_inside_it() {
          error: every matched stylesheet is inside the output directory out\n"
     );
 }
+
+fn symlinked_content_project() -> tempfile::TempDir {
+    project(&[
+        ("src/index.html", r#"<p class="a">"#),
+        ("shared/Card.html", r#"<p class="c">"#),
+        ("app.css", ".a{color:red}.c{color:red}.zz{color:red}"),
+    ])
+}
+
+#[cfg(unix)]
+#[test]
+fn prune_should_scan_symlinked_content_files() {
+    let dir = symlinked_content_project();
+    symlink("../shared/Card.html", &dir.path().join("src/Card.html"));
+    let output = run_in(
+        dir.path(),
+        &["prune", "app.css", "-c", "src/**/*.html", "--minify"],
+        None,
+    );
+    assert_eq!(stdout(&output), ".a{color:red}.c{color:red}");
+}
+
+#[cfg(unix)]
+#[test]
+fn prune_should_scan_symlinked_content_directories() {
+    let dir = symlinked_content_project();
+    symlink("../shared", &dir.path().join("src/linked"));
+    let output = run_in(
+        dir.path(),
+        &["prune", "app.css", "-c", "src", "--minify"],
+        None,
+    );
+    assert_eq!(stdout(&output), ".a{color:red}.c{color:red}");
+}
+
+#[cfg(unix)]
+#[test]
+fn prune_should_warn_about_content_it_cannot_walk() {
+    let dir = symlinked_content_project();
+    symlink("../missing.html", &dir.path().join("src/broken.html"));
+    let output = run_in(
+        dir.path(),
+        &["prune", "app.css", "-c", "src/**/*.html", "--minify"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("warning: content pattern `src/**/*.html`"),
+        "{}",
+        stderr(&output)
+    );
+}

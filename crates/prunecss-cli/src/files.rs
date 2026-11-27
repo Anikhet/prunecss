@@ -4,11 +4,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-/// The files a list of patterns matched, and the patterns that matched none.
+/// The files a list of patterns matched, the patterns that matched none,
+/// and what could not be walked.
 #[derive(Debug, Default)]
 pub(crate) struct Expanded {
     pub(crate) files: Vec<PathBuf>,
     pub(crate) unmatched: Vec<String>,
+    /// A pattern and an entry under it that could not be read, such as a
+    /// broken symlink, a symlink loop or a directory without permission.
+    pub(crate) errors: Vec<(String, String)>,
 }
 
 /// Expands `patterns` relative to `base`.
@@ -16,6 +20,8 @@ pub(crate) struct Expanded {
 /// - An existing file is always used, even if `.gitignore` lists it: naming
 ///   a file is a clear request (build output in `dist/` is often ignored).
 /// - A directory means every file under it.
+/// - Symlinks to files and directories are followed, so content shared
+///   through a link is scanned; loops are reported in `errors`.
 /// - Anything else is a glob such as `src/**/*.{html,tsx}`. Walking respects
 ///   `.gitignore` and `.ignore` unless `respect_ignore_files` is false, and
 ///   works even outside a git repository.
@@ -34,7 +40,14 @@ pub(crate) fn expand(
         if path.is_file() {
             expanded.files.push(path);
         } else if path.is_dir() {
-            walk(&path, None, base, respect_ignore_files, &mut expanded.files);
+            walk(
+                &path,
+                None,
+                base,
+                respect_ignore_files,
+                original,
+                &mut expanded,
+            );
         } else if has_glob_syntax(pattern) {
             let glob = globset::GlobBuilder::new(pattern)
                 .literal_separator(true)
@@ -53,7 +66,8 @@ pub(crate) fn expand(
                 Some(&glob),
                 match_base,
                 respect_ignore_files,
-                &mut expanded.files,
+                original,
+                &mut expanded,
             );
         }
         if expanded.files.len() == before {
@@ -99,13 +113,15 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
     normalized
 }
 
-/// Adds every file under `root` (matching `glob`, relative to `base`).
+/// Adds every file under `root` (matching `glob`, relative to `base`), and
+/// every entry that could not be read, under `pattern`.
 fn walk(
     root: &Path,
     glob: Option<&globset::GlobMatcher>,
     base: &Path,
     respect_ignore_files: bool,
-    files: &mut Vec<PathBuf>,
+    pattern: &str,
+    expanded: &mut Expanded,
 ) {
     let walker = ignore::WalkBuilder::new(root)
         // Like Tailwind's scanner: hidden files can hold templates, and a
@@ -117,17 +133,28 @@ fn walk(
         .git_exclude(respect_ignore_files)
         .ignore(respect_ignore_files)
         .parents(respect_ignore_files)
+        // Content is often shared between packages through symlinks; a
+        // skipped link would make its classes look unused. `ignore` detects
+        // loops and reports them as errors.
+        .follow_links(true)
         .build();
-    // Unreadable entries are skipped; a pattern that then matches nothing is
-    // reported as unmatched by the caller.
-    for entry in walker.flatten() {
+    for entry in walker {
+        let entry = match entry {
+            Ok(entry) => entry,
+            // Never skip silently: the caller warns, since a file that was
+            // not read may hold classes that are in use.
+            Err(err) => {
+                expanded.errors.push((pattern.to_owned(), err.to_string()));
+                continue;
+            }
+        };
         if !entry.file_type().is_some_and(|kind| kind.is_file()) {
             continue;
         }
         let path = entry.into_path();
         let relative = path.strip_prefix(base).unwrap_or(&path);
         if glob.is_none_or(|glob| glob.is_match(relative)) {
-            files.push(path);
+            expanded.files.push(path);
         }
     }
 }
@@ -272,6 +299,25 @@ mod tests {
             normalize(Path::new("/a/site/../styles/./x.css")),
             Path::new("/a/styles/x.css")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn expand_should_follow_symlinked_directories() {
+        let dir = project();
+        std::os::unix::fs::symlink("components", dir.path().join("src/linked")).unwrap();
+        let expanded = expand_in(&dir, &["src/linked/*.vue"], true);
+        assert_eq!(relative(&expanded, dir.path()), ["src/linked/Card.vue"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn expand_should_report_entries_it_cannot_walk() {
+        let dir = project();
+        std::os::unix::fs::symlink("missing.html", dir.path().join("src/broken.html")).unwrap();
+        let expanded = expand_in(&dir, &["src/*.html"], true);
+        let patterns: Vec<&str> = expanded.errors.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(patterns, ["src/*.html"]);
     }
 
     #[test]

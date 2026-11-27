@@ -239,6 +239,9 @@ fn css_inputs(settings: &PruneSettings, output: Option<&Path>) -> Result<Vec<Inp
         return Ok(vec![Input::Stdin]);
     }
     let expanded = files::expand(patterns, &settings.css.base, settings.gitignore)?;
+    for (pattern, error) in &expanded.errors {
+        eprintln!("warning: stylesheet pattern `{pattern}`: {error}");
+    }
     if let Some(pattern) = expanded.unmatched.first() {
         bail!("no stylesheet matched `{pattern}`");
     }
@@ -507,6 +510,11 @@ fn content_files(content: &Patterns, gitignore: bool) -> Result<Vec<PathBuf>> {
     let expanded = files::expand(&content.patterns, &content.base, gitignore)?;
     for pattern in &expanded.unmatched {
         eprintln!("warning: content pattern `{pattern}` matched no files");
+    }
+    // Like an unmatched pattern: classes in a file that was not read look
+    // unused, so say so.
+    for (pattern, error) in &expanded.errors {
+        eprintln!("warning: content pattern `{pattern}`: {error}; anything there was not scanned");
     }
     if expanded.files.is_empty() {
         bail!(
