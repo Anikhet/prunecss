@@ -52,7 +52,7 @@
       "default": false
     },
     "output": {
-      "description": "Where to write the result: a file when pruning one stylesheet, a\ndirectory when pruning several. Omit to print a single stylesheet to\nstandard output.",
+      "description": "Where to write the result: a file when pruning one stylesheet, a\ndirectory when pruning several. Omit to print a single stylesheet to\nstandard output. Ignored when stylesheets are given on the command\nline: then only `--output` decides.",
       "type": [
         "string",
         "null"

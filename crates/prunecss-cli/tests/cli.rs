@@ -1125,3 +1125,22 @@ fn the_last_of_minify_and_no_minify_should_win() {
     );
     assert_eq!(stdout(&output), ".a{color:red}");
 }
+
+#[test]
+fn parent_config_output_should_not_redirect_stylesheets_given_on_the_command_line() {
+    let dir = project(&[
+        (
+            "prunecss.json",
+            r#"{ "output": "redirected.css", "minify": true }"#,
+        ),
+        ("work/i.html", r#"<p class="a">"#),
+        ("work/a.css", ".a{color:red}.zz{color:red}"),
+    ]);
+    let output = run_in(
+        &dir.path().join("work"),
+        &["prune", "a.css", "-c", "i.html"],
+        None,
+    );
+    assert_eq!(stdout(&output), ".a{color:red}", "{}", stderr(&output));
+    assert!(!dir.path().join("redirected.css").exists());
+}

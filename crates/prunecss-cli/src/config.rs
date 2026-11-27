@@ -31,7 +31,8 @@ pub(crate) struct Config {
     pub(crate) content: Vec<String>,
     /// Where to write the result: a file when pruning one stylesheet, a
     /// directory when pruning several. Omit to print a single stylesheet to
-    /// standard output.
+    /// standard output. Ignored when stylesheets are given on the command
+    /// line: then only `--output` decides.
     pub(crate) output: Option<String>,
     /// Names to keep whatever the content says. Each entry is an exact name
     /// or a `/regex/`. A plain list means `standard`.

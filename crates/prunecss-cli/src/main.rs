@@ -29,7 +29,9 @@ const EXIT_ERROR: u8 = 2;
 ///
 /// Settings come from command-line flags, then the nearest prunecss.json
 /// (in the current directory or a parent), then defaults. Each on/off
-/// setting has a --no-* flag to turn off what the file turns on.
+/// setting has a --no-* flag to turn off what the file turns on. When
+/// stylesheets are given on the command line, only --output decides where
+/// the result goes; `output` in prunecss.json is ignored.
 #[derive(Parser)]
 #[command(version, about, long_about)]
 #[command(after_help = "Examples:
@@ -82,7 +84,8 @@ struct PruneArgs {
     #[arg(long, short, num_args = 1.., value_name = "PATTERN")]
     content: Vec<String>,
     /// Write here instead of standard output: a file for one stylesheet, a
-    /// directory for several.
+    /// directory for several. With stylesheets on the command line, `output`
+    /// in prunecss.json is ignored.
     #[arg(long, short, value_name = "PATH")]
     output: Option<PathBuf>,
     /// Print the result without whitespace.
@@ -291,9 +294,12 @@ fn prune_settings(args: PruneArgs, loaded: &Loaded) -> Result<PruneSettings> {
         .font_face(flag(args.font_face, args.no_font_face, config.font_face))
         .variables(flag(args.variables, args.no_variables, config.variables));
 
-    // `-` means standard output, wherever it comes from.
+    // The config's `output` belongs to the config's `css`: stylesheets named
+    // on the command line (perhaps with a prunecss.json found in some parent
+    // directory) must not be redirected by it. `-` means standard output.
+    let config_output = config.output.as_ref().filter(|_| args.css.is_empty());
     let output = args.output.or_else(|| {
-        config.output.as_ref().map(|output| {
+        config_output.map(|output| {
             if output == "-" {
                 PathBuf::from("-")
             } else {
