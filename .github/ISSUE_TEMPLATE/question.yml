@@ -1,0 +1,22 @@
+name: Question
+description: Ask how to do something with prunecss, or why it kept or removed something.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [FAQ](https://github.com/Anikhet/prunecss/blob/main/FAQ.md) and [existing issues](https://github.com/Anikhet/prunecss/issues?q=is%3Aissue) first. If prunecss **removed CSS your page needs**, use the "CSS was wrongly removed" form instead.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What you are trying to do, and what you tried.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: The prunecss version (`prunecss --version`), your operating system, the exact command and config file, and a small piece of the CSS and HTML/JS involved, as text.
+    validations:
+      required: false
