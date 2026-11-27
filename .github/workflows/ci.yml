@@ -245,8 +245,6 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           "$(go env GOPATH)/bin/actionlint" -color
 
-  # The single check that branch protection requires. Add new jobs to `needs`
-  # and the ruleset never has to change when the matrix does.
   typos:
     name: Spelling
     runs-on: ubuntu-latest
@@ -261,6 +259,8 @@ jobs:
       # Configured in _typos.toml.
       - run: typos
 
+  # The single check that branch protection requires. Add new jobs to `needs`
+  # and the ruleset never has to change when the matrix does.
   ci-success:
     name: CI success
     if: always()
