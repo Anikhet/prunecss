@@ -85,7 +85,16 @@ git switch main
 git pull --ff-only origin main
 ```
 
-The library has to exist before the CLI that depends on it:
+**Without a local Rust setup:** store the crates.io token as the
+repository secret `CARGO_REGISTRY_TOKEN` (Settings, Secrets and variables,
+Actions), then run the **Publish first release** workflow on `main`
+(Actions, Publish first release, Run workflow). It publishes both crates,
+pushes both tags and builds the binaries into a draft release, so the
+commands below are not needed. Then continue with step 4, and delete the
+secret along with the token.
+
+**From your own machine instead:** the library has to exist before the CLI
+that depends on it:
 
 ```bash
 cargo publish -p prunecss-core --locked
