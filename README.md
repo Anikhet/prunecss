@@ -43,8 +43,7 @@ cargo install --git https://github.com/Anikhet/prunecss prunecss --locked
 ```
 
 The first release (0.1.0) will add `cargo install prunecss` and prebuilt
-binaries for Linux, macOS and Windows. An npm package is on the
-[roadmap](#roadmap).
+binaries for Linux, macOS and Windows.
 
 ## Usage
 
@@ -208,22 +207,6 @@ one to two weeks.
 - Security issues: see [SECURITY.md](SECURITY.md); please don't open a public issue
 - Changes: see [CHANGELOG.md](CHANGELOG.md)
 - Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-
-## Roadmap
-
-- [x] Remove unused rules and selectors, parsing CSS with
-  [Lightning CSS](https://lightningcss.dev)
-- [x] Find class names in HTML, JS/TS, Vue, Svelte, Astro and Angular
-- [x] Safelist (standard, greedy, deep; exact or `/regex/`)
-- [x] Opt-in removal of unused `@keyframes`, `@font-face` and custom properties
-- [x] `prunecss.json` config file with JSON Schema
-- [x] Globs, `.gitignore`-aware discovery and parallel scanning
-- [x] `--check` mode, exit codes, JSON report, stdin, shell completions
-- [x] Fuzzing, property tests, benchmarks against PurgeCSS
-- [ ] Keep the original bytes of every kept rule instead of reprinting it
-- [ ] Report wrongly removed CSS from a real browser (Playwright coverage)
-- [ ] npm package, Vite and PostCSS plugins
-- [ ] Language server and VS Code extension
 
 ## License
 

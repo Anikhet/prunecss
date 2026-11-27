@@ -82,8 +82,8 @@ matter. A future version will copy kept rules byte for byte.
 
 ## Can I use it from Vite, PostCSS, webpack or npm?
 
-Not yet. An npm package with Vite and PostCSS plugins is next on the
-[roadmap](README.md#roadmap). Until then, run the CLI after your build,
+Not yet; an npm package with Vite and PostCSS plugins is planned. Until
+then, run the CLI after your build,
 for example in an npm `postbuild` script.
 
 ## Can I use it as a Rust library?
