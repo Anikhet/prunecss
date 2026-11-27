@@ -132,7 +132,7 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
 
     let content_files = content_files(&settings.content, settings.gitignore)?;
     let sources = read_all(&content_files)?;
-    check_destinations(&destinations, &inputs)?;
+    check_destinations(&destinations, &inputs, &content_files, &sources)?;
     let used = used_names(&sources);
     if used.is_empty() {
         bail!(
@@ -362,19 +362,30 @@ fn common_parent(paths: &[PathBuf]) -> Option<PathBuf> {
     Some(common)
 }
 
-/// Refuses a plan that would replace an input, before anything is written.
+/// Refuses a plan that would replace an input or a content file, before
+/// anything is written.
 ///
 /// Files are compared by identity (device and inode on Unix, volume and file
 /// index on Windows), which also catches symlinks, hard links and other
 /// spellings of the same file on case-insensitive file systems.
-fn check_destinations(destinations: &[Option<PathBuf>], inputs: &[Input]) -> Result<()> {
+fn check_destinations(
+    destinations: &[Option<PathBuf>],
+    inputs: &[Input],
+    content_files: &[PathBuf],
+    sources: &[Source],
+) -> Result<()> {
     let mut existing = Vec::new();
     for destination in destinations.iter().flatten() {
-        match same_file::Handle::from_path(destination) {
-            Ok(handle) => existing.push(Existing {
+        let found = same_file::Handle::from_path(destination).and_then(|handle| {
+            let size = std::fs::metadata(destination)?.len();
+            Ok(Existing {
                 path: destination,
                 handle,
-            }),
+                size,
+            })
+        });
+        match found {
+            Ok(found) => existing.push(found),
             // Nothing there yet, so nothing to overwrite.
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => {
@@ -396,6 +407,21 @@ fn check_destinations(destinations: &[Option<PathBuf>], inputs: &[Input]) -> Res
         bail!(
             "refusing to overwrite the input {}; choose a different --output",
             same_as(destination, input)
+        );
+    }
+    // There can be thousands of content files. One can only be the same file
+    // as a destination of the same size, and the sizes are known from
+    // reading them, so only those few are opened again to compare.
+    let candidates: Vec<&PathBuf> = content_files
+        .iter()
+        .zip(sources)
+        .filter(|(_, source)| existing.iter().any(|found| found.size == source.size))
+        .map(|(path, _)| path)
+        .collect();
+    if let Some((destination, content)) = overwritten(&existing, &candidates) {
+        bail!(
+            "refusing to overwrite the content file {}; choose a different --output",
+            same_as(destination, content)
         );
     }
     Ok(())
@@ -431,6 +457,7 @@ fn overwritten<'a, 'f>(
 struct Existing<'a> {
     path: &'a PathBuf,
     handle: same_file::Handle,
+    size: u64,
 }
 
 /// Expands the content patterns, refusing to continue without any files:
@@ -452,14 +479,24 @@ fn content_files(content: &Patterns, gitignore: bool) -> Result<Vec<PathBuf>> {
     Ok(expanded.files)
 }
 
+/// A content file's text.
+struct Source {
+    text: String,
+    /// The size in bytes on disk, before invalid UTF-8 was replaced.
+    size: u64,
+}
+
 /// Reads content files in parallel. Invalid UTF-8 is replaced rather than
 /// fatal: a stray binary file in a glob shouldn't stop the run.
-fn read_all(paths: &[PathBuf]) -> Result<Vec<String>> {
+fn read_all(paths: &[PathBuf]) -> Result<Vec<Source>> {
     paths
         .par_iter()
         .map(|path| {
             std::fs::read(path)
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                .map(|bytes| Source {
+                    size: bytes.len() as u64,
+                    text: String::from_utf8_lossy(&bytes).into_owned(),
+                })
                 .with_context(|| format!("reading {}", display(path)))
         })
         .collect()
@@ -483,11 +520,11 @@ fn read_input(input: &Input) -> Result<String> {
 }
 
 /// Collects candidate names across files in parallel, borrowing from them.
-fn used_names(sources: &[String]) -> FxHashSet<Cow<'_, str>> {
+fn used_names(sources: &[Source]) -> FxHashSet<Cow<'_, str>> {
     sources
         .par_iter()
         .fold(FxHashSet::default, |mut names, source| {
-            names.extend(extract_classes(source));
+            names.extend(extract_classes(&source.text));
             names
         })
         .reduce(FxHashSet::default, |mut larger, mut smaller| {

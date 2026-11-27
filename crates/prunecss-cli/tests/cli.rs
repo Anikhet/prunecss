@@ -849,3 +849,29 @@ fn output_should_refuse_to_overwrite_a_hard_linked_input() {
         ".a{color:red}.zz{color:red}"
     );
 }
+
+#[test]
+fn output_should_refuse_to_overwrite_a_content_file() {
+    let dir = project(&[("i.html", r#"<p class="a">"#), ("c.css", ".a{color:red}")]);
+    let output = run_in(
+        dir.path(),
+        &["prune", "c.css", "-c", "i.html", "-o", "i.html"],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert_eq!(read(&dir.path().join("i.html")), r#"<p class="a">"#);
+}
+
+#[test]
+fn output_should_name_the_content_file_it_refuses_to_overwrite() {
+    let dir = project(&[("i.html", r#"<p class="a">"#), ("c.css", ".a{color:red}")]);
+    let output = run_in(
+        dir.path(),
+        &["prune", "c.css", "-c", "i.html", "-o", "i.html"],
+        None,
+    );
+    assert_eq!(
+        stderr(&output),
+        "error: refusing to overwrite the content file i.html; choose a different --output\n"
+    );
+}
