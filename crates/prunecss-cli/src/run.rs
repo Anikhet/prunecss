@@ -1,7 +1,7 @@
 //! What each command does, once arguments and config are resolved.
 
 use std::borrow::Cow;
-use std::io::Read as _;
+use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -131,8 +131,11 @@ pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
     };
 
     let content_files = content_files(&settings.content, settings.gitignore)?;
+    let output_dir = output
+        .as_deref()
+        .filter(|output| inputs.len() > 1 || is_directory_like(output, settings.output.as_deref()));
     let sources = read_all(&content_files)?;
-    check_destinations(&destinations, &inputs, &content_files, &sources)?;
+    check_destinations(&destinations, &inputs, &content_files, &sources, output_dir)?;
     let used = used_names(&sources);
     if used.is_empty() {
         bail!(
@@ -362,8 +365,8 @@ fn common_parent(paths: &[PathBuf]) -> Option<PathBuf> {
     Some(common)
 }
 
-/// Refuses a plan that would replace an input or a content file, before
-/// anything is written.
+/// Refuses a plan that would replace an input or a content file, or write
+/// outside the output directory, before anything is written.
 ///
 /// Files are compared by identity (device and inode on Unix, volume and file
 /// index on Windows), which also catches symlinks, hard links and other
@@ -373,9 +376,13 @@ fn check_destinations(
     inputs: &[Input],
     content_files: &[PathBuf],
     sources: &[Source],
+    output_dir: Option<&Path>,
 ) -> Result<()> {
     let mut existing = Vec::new();
     for destination in destinations.iter().flatten() {
+        if let Some(dir) = output_dir {
+            check_inside(destination, dir)?;
+        }
         let found = same_file::Handle::from_path(destination).and_then(|handle| {
             let size = std::fs::metadata(destination)?.len();
             Ok(Existing {
@@ -451,6 +458,29 @@ fn overwritten<'a, 'f>(
             .find(|found| found.handle == handle)
             .map(|found| (found.path.as_path(), file.as_path()))
     })
+}
+
+/// Refuses a destination whose directory resolves outside `dir`, as when a
+/// subdirectory of the output directory is a symlink to somewhere else.
+fn check_inside(destination: &Path, dir: &Path) -> Result<()> {
+    // A missing output directory has no symlinks inside it.
+    let Ok(canonical_dir) = dir.canonicalize() else {
+        return Ok(());
+    };
+    // The deepest directory that exists; the rest will be created as real
+    // directories under it.
+    let existing = destination
+        .ancestors()
+        .skip(1)
+        .find_map(|ancestor| ancestor.canonicalize().ok());
+    if existing.is_some_and(|parent| !parent.starts_with(&canonical_dir)) {
+        bail!(
+            "refusing to write {}: its directory resolves outside the output directory {}",
+            display(destination),
+            display(dir)
+        );
+    }
+    Ok(())
 }
 
 /// A planned destination that already exists.
@@ -542,10 +572,40 @@ fn write_output(destination: Option<&Path>, css: &str) -> Result<()> {
         print!("{css}");
         return Ok(());
     };
-    if let Some(parent) = destination.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent).with_context(|| format!("creating {}", display(parent)))?;
+    write_file(destination, css)
+}
+
+/// Writes to a temporary file next to `destination`, then renames it over
+/// the destination: a failed write never leaves a truncated file, and a
+/// destination that is a hard link or symlink is replaced, not written
+/// through.
+fn write_file(destination: &Path, css: &str) -> Result<()> {
+    let parent = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", display(parent)))?;
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".prunecss-").suffix(".tmp");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        // What `fs::write` would create (narrowed by the umask), instead of
+        // the private 0600 of a temporary file.
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
     }
-    std::fs::write(destination, css).with_context(|| format!("writing {}", display(destination)))
+    let writing = || format!("writing {}", display(destination));
+    let mut temp = builder.tempfile_in(parent).with_context(writing)?;
+    temp.write_all(css.as_bytes()).with_context(writing)?;
+    #[cfg(unix)]
+    if let Ok(metadata) = std::fs::metadata(destination) {
+        // Keep the mode of the file being replaced.
+        std::fs::set_permissions(temp.path(), metadata.permissions()).with_context(writing)?;
+    }
+    temp.persist(destination)
+        .map_err(|err| err.error)
+        .with_context(writing)?;
+    Ok(())
 }
 
 /// Shows each rule the parser dropped, so nothing disappears silently.

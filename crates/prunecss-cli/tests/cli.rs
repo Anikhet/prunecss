@@ -826,6 +826,12 @@ fn prune_should_keep_tailwind_v4_css_variable_classes() {
 
 // ---- Third review: file identity, symlinks, pipes, precedence ------------
 
+#[cfg(unix)]
+fn symlink(target: &str, link: &Path) {
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
 #[test]
 fn output_should_refuse_to_overwrite_a_hard_linked_input() {
     let dir = project(&[
@@ -874,4 +880,51 @@ fn output_should_name_the_content_file_it_refuses_to_overwrite() {
         stderr(&output),
         "error: refusing to overwrite the content file i.html; choose a different --output\n"
     );
+}
+
+#[test]
+fn output_should_replace_a_hard_linked_destination_instead_of_writing_through_it() {
+    let dir = project(&[
+        ("i.html", r#"<p class="a">"#),
+        ("c.css", ".a{color:red}.zz{color:red}"),
+        ("other.txt", "KEEP ME"),
+    ]);
+    std::fs::hard_link(dir.path().join("other.txt"), dir.path().join("out.css")).unwrap();
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune", "c.css", "-c", "i.html", "-o", "out.css", "--minify",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(read(&dir.path().join("other.txt")), "KEEP ME");
+    assert_eq!(read(&dir.path().join("out.css")), ".a{color:red}");
+}
+
+#[cfg(unix)]
+#[test]
+fn output_should_refuse_a_symlinked_subdirectory_inside_the_output_directory() {
+    let dir = project(&[
+        ("i.html", r#"<p class="a b">"#),
+        ("styles/a.css", ".a{color:red}"),
+        ("styles/sub/b.css", ".b{color:red}"),
+        ("elsewhere/keep.txt", ""),
+    ]);
+    symlink("../elsewhere", &dir.path().join("out/sub"));
+    let output = run_in(
+        dir.path(),
+        &[
+            "prune",
+            "styles/a.css",
+            "styles/sub/b.css",
+            "-c",
+            "i.html",
+            "-o",
+            "out/",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(!dir.path().join("elsewhere/b.css").exists());
 }
