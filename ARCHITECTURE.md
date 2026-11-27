@@ -51,7 +51,7 @@ stylesheet ──read──▶ text ──Lightning CSS parse──▶ rules ─
 
 ### `crates/prunecss-core`
 
-The library. All logic lives here. It will be published to crates.io and
+The library. All logic lives here. It is published on crates.io and
 wrapped by every future front end.
 
 - `src/lib.rs`: the public API. Modules are private and every public item is

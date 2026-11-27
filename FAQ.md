@@ -89,9 +89,8 @@ for example in an npm `postbuild` script.
 ## Can I use it as a Rust library?
 
 Yes. `prunecss-core` contains all the logic; the CLI is a thin wrapper
-around it. It is not on crates.io yet: until 0.1.0 is published, depend on
-it from git (`prunecss-core = { git = "https://github.com/Anikhet/prunecss" }`)
-and read its documentation with `cargo doc -p prunecss-core --open`.
+around it: add `prunecss-core = "0.1"` to your `Cargo.toml`. Its
+documentation is on [docs.rs](https://docs.rs/prunecss-core).
 
 ```rust
 use std::collections::BTreeSet;
