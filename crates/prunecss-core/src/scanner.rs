@@ -712,12 +712,27 @@ mod tests {
 
     // Rule 10 from the research: no quadratic blow-up on long minified lines
     // full of brackets, as Tailwind's scanner once had.
+    //
+    // The bound is deliberately loose. A linear scan of these ~1.7 MB takes
+    // about two seconds in a debug build (doubling any part doubles its
+    // time), while a quadratic one would do ~10^12 steps and run for hours,
+    // so 60s still tells the two apart without failing under `cargo
+    // llvm-cov` or on a slow, busy CI runner. Comparing two input sizes was rejected: a ratio of short
+    // timings is noisier than one absolute bound.
     #[test]
     fn extract_classes_should_stay_linear_on_pathological_input() {
-        let source = "[".repeat(200_000) + &"a(".repeat(200_000);
+        let source = "[".repeat(200_000)
+            + &"a(".repeat(200_000)
+            + &"bg-(".repeat(100_000)
+            + &"&amp;amp;".repeat(50_000)
+            + &"\\u{".repeat(100_000);
         let start = std::time::Instant::now();
         let _ = extract_classes(&source);
-        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(60),
+            "took {elapsed:?}"
+        );
     }
 
     mod properties {
