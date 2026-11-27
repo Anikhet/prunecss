@@ -233,8 +233,8 @@ Before you open a pull request:
 
 - [ ] There is an issue for it, unless it is a small fix.
 - [ ] Tests were written first and cover the change.
-- [ ] `cargo fmt --check`, `cargo clippy ... -D warnings` and `cargo test`
-      pass.
+- [ ] `cargo fmt --check`, `cargo clippy ... -D warnings`, `cargo test` and
+      `typos` pass (`just check`).
 - [ ] Changed snapshots were reviewed with `cargo insta review`.
 - [ ] Public items have doc comments.
 - [ ] Commit messages follow Conventional Commits.
