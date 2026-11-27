@@ -81,36 +81,40 @@ const MAX_DECODE_PASSES: usize = 3;
 
 /// Emits every candidate in `text`.
 fn collect<'t>(text: &'t str, emit: &mut impl FnMut(&'t str)) {
-    // Two readings of the same text, because brackets are ambiguous: in
+    // Several readings of the same text, because brackets are ambiguous: in
     // `grid-cols-[repeat(2,1fr)]` they hold part of one Tailwind name, while
     // in `clsx(['a', { b: on }])` they are JavaScript punctuation. Taking the
-    // union of both readings finds the names either way.
-    // Without brackets, `+` or `~` the two readings give the same tokens.
-    let readings: &[Brackets] = if text.contains(['[', ']', '+', '~']) {
-        &[
-            Brackets::KeepWhole,
-            Brackets::KeepWholeQuotesEnd,
-            Brackets::Split,
-        ]
-    } else {
-        &[Brackets::KeepWhole]
-    };
-    for &brackets in readings {
-        let mut tokens = Tokens::new(text, brackets);
-        while let Some(token) = tokens.next() {
-            add_token(text, token, emit);
-            // Keeping `name-(…)` whole (Tailwind v4's `bg-(--brand)`) hides
-            // the tokens the text gave before, such as `x` in `a-(x)`.
-            // Re-reading just the grouped tokens without grouping restores
-            // them, so the readings only ever add names. Each such token is
-            // re-read once, so this stays linear.
-            if tokens.grouped_parens {
-                for part in Tokens::new(token, brackets).without_paren_groups() {
-                    add_token(text, part, emit);
-                }
+    // union of the readings finds the names either way.
+    let kept_quote_in_brackets = read(text, Brackets::KeepWhole, emit);
+    // Without brackets, `+` or `~` the other readings give the same tokens.
+    if text.contains(['[', ']', '+', '~']) {
+        // The quotes-end reading differs from keep-whole only where a quote
+        // sits inside `[…]`; without one it would repeat the same tokens.
+        if kept_quote_in_brackets {
+            read(text, Brackets::KeepWholeQuotesEnd, emit);
+        }
+        read(text, Brackets::Split, emit);
+    }
+}
+
+/// Emits the candidates of one reading of `text`. Returns whether the
+/// reading kept a quote inside `[…]`.
+fn read<'t>(text: &'t str, brackets: Brackets, emit: &mut impl FnMut(&'t str)) -> bool {
+    let mut tokens = Tokens::new(text, brackets);
+    while let Some(token) = tokens.next() {
+        add_token(text, token, emit);
+        // Keeping `name-(…)` whole (Tailwind v4's `bg-(--brand)`) hides
+        // the tokens the text gave before, such as `x` in `a-(x)`.
+        // Re-reading just the grouped tokens without grouping restores
+        // them, so the readings only ever add names. Each such token is
+        // re-read once, so this stays linear.
+        if tokens.grouped_parens {
+            for part in Tokens::new(token, brackets).without_paren_groups() {
+                add_token(text, part, emit);
             }
         }
     }
+    tokens.kept_quote_in_brackets
 }
 
 /// Emits the candidates in `token`, a slice of `text`.
@@ -373,6 +377,8 @@ struct Tokens<'a> {
     paren_groups: bool,
     /// Whether the last token returned contains such a group.
     grouped_parens: bool,
+    /// Whether any token so far kept a quote inside `[…]`.
+    kept_quote_in_brackets: bool,
 }
 
 impl<'a> Tokens<'a> {
@@ -383,6 +389,7 @@ impl<'a> Tokens<'a> {
             brackets,
             paren_groups: true,
             grouped_parens: false,
+            kept_quote_in_brackets: false,
         }
     }
 
@@ -409,6 +416,7 @@ impl<'a> Iterator for Tokens<'a> {
             let byte = bytes[self.pos];
             let quote_inside_brackets =
                 is_quote(byte) && self.brackets == Brackets::KeepWhole && depth > 0;
+            self.kept_quote_in_brackets |= quote_inside_brackets;
             let ends_token =
                 if is_hard_delimiter(byte) || (is_quote(byte) && !quote_inside_brackets) {
                     // A name never spans whitespace, so an unbalanced `[` or
@@ -739,6 +747,25 @@ mod tests {
                         prop_assert!(found.contains(token), "missing {token:?}");
                     }
                 }
+            }
+
+            #[test]
+            // `collect` skips the quotes-end reading when the keep-whole
+            // reading saw no quote inside `[…]`; that must change nothing.
+            fn skipping_the_quotes_end_reading_changes_nothing(
+                source in r#"[a-c(),;\[\]'" +~-]{0,40}"#,
+            ) {
+                let mut every_reading: BTreeSet<&str> = BTreeSet::new();
+                for brackets in [Brackets::KeepWhole, Brackets::KeepWholeQuotesEnd, Brackets::Split] {
+                    read(&source, brackets, &mut |name| {
+                        every_reading.insert(name);
+                    });
+                }
+                let mut collected: BTreeSet<&str> = BTreeSet::new();
+                collect(&source, &mut |name| {
+                    collected.insert(name);
+                });
+                prop_assert_eq!(collected, every_reading);
             }
 
             #[test]
