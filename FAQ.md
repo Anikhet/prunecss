@@ -24,9 +24,10 @@ uses less memory, and it removed nothing a static page needs.
 ## Is it a drop-in replacement for PurgeCSS?
 
 Mostly. It uses the same "bag of names" model, `prunecss.json` uses
-PurgeCSS's option names (`content`, `css`, `safelist` with `standard`,
-`deep`, `greedy`, `keyframes`, `fontFace`, `variables`), and safelist
-regexes are written as `"/^btn-/"`. The differences:
+PurgeCSS's option names (`content`, `css`, `output`, `safelist` with
+`standard`, `deep`, `greedy`, `keyframes` and `variables`, and the
+`keyframes`, `fontFace` and `variables` switches), and safelist regexes are
+written as `"/^btn-/"`. The differences:
 
 - prunecss never removes CSS because of tags, attributes or pseudo-classes,
   only because of classes and ids (see the next question).
@@ -87,8 +88,10 @@ for example in an npm `postbuild` script.
 
 ## Can I use it as a Rust library?
 
-Yes. [`prunecss-core`](https://docs.rs/prunecss-core) contains all the
-logic; the CLI is a thin wrapper around it:
+Yes. `prunecss-core` contains all the logic; the CLI is a thin wrapper
+around it. It is not on crates.io yet: until 0.1.0 is published, depend on
+it from git (`prunecss-core = { git = "https://github.com/Anikhet/prunecss" }`)
+and read its documentation with `cargo doc -p prunecss-core --open`.
 
 ```rust
 use std::collections::BTreeSet;
