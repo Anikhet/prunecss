@@ -14,6 +14,7 @@ See [CONTRIBUTING.md](https://github.com/Anikhet/prunecss/blob/main/CONTRIBUTING
 - [ ] `cargo fmt --check` passes.
 - [ ] `cargo clippy --all-targets --all-features --locked -- -D warnings` passes.
 - [ ] `cargo test` passes.
+- [ ] `typos` passes.
 - [ ] Changed snapshots were reviewed with `cargo insta review` (or none changed).
 - [ ] Public items have `///` doc comments.
 - [ ] Commit messages follow Conventional Commits (`feat:`, `fix:`, `perf:`, ...,
