@@ -1419,21 +1419,27 @@ fn keep_style_rule<R, U: UsedNames>(
 /// is that of the most specific selector in the list. If pruning would drop
 /// that selector while keeping others, nested rules would silently lose to
 /// rules they used to beat. Keep the most specific one in that case.
+///
+/// `&` never matches a pseudo-element, so selectors with one take no part:
+/// they neither need keeping nor count as already providing specificity.
 fn keep_nesting_specificity(selectors: &[Selector<'_>], keep: &mut [bool]) {
     let kept_max = selectors
         .iter()
         .zip(keep.iter())
-        .filter(|(_, kept)| **kept)
+        .filter(|(selector, kept)| **kept && !selector.has_pseudo_element())
         .map(|(selector, _)| selector.specificity())
         .max();
     let Some(kept_max) = kept_max else {
-        // Nothing kept: the whole rule and its children go.
+        // Nothing `&` can match was kept, so the nested rules match
+        // nothing used either; no specificity to preserve.
         return;
     };
     let most_specific_removed = selectors
         .iter()
         .enumerate()
-        .filter(|(index, selector)| !keep[*index] && selector.specificity() > kept_max)
+        .filter(|(index, selector)| {
+            !keep[*index] && !selector.has_pseudo_element() && selector.specificity() > kept_max
+        })
         .max_by_key(|(_, selector)| selector.specificity());
     if let Some((index, _)) = most_specific_removed {
         keep[index] = true;
@@ -2487,6 +2493,25 @@ mod tests {
     fn prune_should_remove_less_specific_parent_selectors_of_nested_rules() {
         let css = "#a,.gone{& .c{color:red}}";
         assert_eq!(prune_min(css, &["a", "c"]), "#a{& .c{color:red}}");
+    }
+
+    // Third review: `&` cannot match pseudo-elements, so a parent with one
+    // adds nothing to `&`'s specificity and need not be kept for it...
+    #[test]
+    fn prune_should_not_keep_a_pseudo_element_parent_for_nesting_specificity() {
+        let css = ".a,.b::before{&:hover{color:red}}";
+        assert_eq!(prune_min(css, &["a"]), ".a{&:hover{color:red}}");
+    }
+
+    // ...and it must not set the bar either: here `&` is as specific as
+    // `.d span`, which has to stay although `.a::before` is as specific.
+    #[test]
+    fn prune_should_ignore_kept_pseudo_element_parents_when_preserving_specificity() {
+        let css = ".a::before,.c,.d span{& .x{color:red}}";
+        assert_eq!(
+            prune_min(css, &["a", "c", "x"]),
+            ".a:before,.c,.d span{& .x{color:red}}"
+        );
     }
 
     #[test]
