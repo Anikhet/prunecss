@@ -9,7 +9,7 @@ body:
 
         The most helpful report is a **minimal reproduction**: cut your files down until the problem only just still happens. A few lines of HTML/JS and a few lines of CSS is ideal. Small cases often become regression tests directly.
 
-        Before you report: class names built at runtime, such as `` `btn-${size}` `` or `clsx(...)` calls, are a [known limit](https://github.com/Anikhet/prunecss#known-limits) of any text scanner.
+        Before you report: class names built at runtime, such as `` `btn-${size}` ``, are a [known limit](https://github.com/Anikhet/prunecss/blob/main/FAQ.md#how-do-i-keep-classes-built-at-runtime) of any text scanner; safelist them. Literal names inside `clsx(...)`, `cn(...)` and similar calls are found.
   - type: input
     id: version
     attributes:

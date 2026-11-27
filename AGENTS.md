@@ -88,7 +88,8 @@ future language-server layer, which waits on editor messages.
   `cargo insta` snapshots for whole CSS outputs.
 - No `mockall`: the core is pure functions over text. Use real fixture files.
 - Test error paths with `Result`/`matches!`, not `#[should_panic]`.
-- Coverage (`cargo llvm-cov`): 100% on matching/pruning logic (it decides what
-  gets deleted), 80%+ elsewhere.
+- Coverage (`cargo llvm-cov`, `just coverage`): CI requires 95% lines for
+  `prunecss-core` and 80% for the workspace; aim for 100% on matching/pruning
+  logic (it decides what gets deleted).
 - Speed vs PurgeCSS is measured end-to-end with `hyperfine`; internal hot paths
   with `criterion`.

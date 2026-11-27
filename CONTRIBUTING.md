@@ -139,8 +139,9 @@ Test style:
 - No mocking libraries. Use real CSS and HTML text.
 - Test error paths by checking the `Result` (for example with `matches!`),
   not with `#[should_panic]`.
-- Coverage target: 100% for the matching and pruning logic, because it
-  decides what gets deleted; 80% or more elsewhere.
+- Coverage: CI fails below 95% line coverage for `prunecss-core` and 80%
+  for the whole workspace (`just coverage`). Aim for 100% on the matching and
+  pruning logic, because it decides what gets deleted.
 
 ### Snapshots
 

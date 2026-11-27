@@ -27,8 +27,9 @@ editor.
 
 ## Decision
 
-- `prunecss-core` uses **rayon** for parallel work, and plain synchronous
-  functions in its public API.
+- Parallel work uses **rayon**. Today only the CLI does: it reads and scans
+  content files in parallel. `prunecss-core` offers plain synchronous
+  functions that callers can run on any thread.
 - `prunecss-core` does **not** depend on Tokio or any other async runtime,
   and has no `async fn` in its API.
 - Async is allowed only in the future **language server** layer, which waits

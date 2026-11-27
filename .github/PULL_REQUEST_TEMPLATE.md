@@ -8,7 +8,7 @@
 
 ## Checklist
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](https://github.com/Anikhet/prunecss/blob/main/CONTRIBUTING.md) for details.
 
 - [ ] Tests were written first, failed, and now pass.
 - [ ] `cargo fmt --check` passes.

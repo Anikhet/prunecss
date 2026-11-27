@@ -71,7 +71,7 @@ pull requests. So these count as security issues:
 - **writing files outside the place you asked for**, for example through path
   traversal (`../`) or symbolic links when writing output;
 - **a malicious config file** that makes prunecss read or write files it
-  should not, or run commands (once config files exist);
+  should not, or run commands;
 - a vulnerability in one of our dependencies that affects prunecss.
 
 ## What is not a vulnerability

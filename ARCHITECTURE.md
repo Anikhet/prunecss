@@ -141,7 +141,7 @@ happen.
 - **No Lightning CSS types in the public API.** Lightning CSS is a pinned
   alpha. Its errors are converted at the boundary into `PruneError`. See
   [ADR 0002](docs/adr/0002-lightning-css-for-parsing.md).
-- **No async in the core.** The work is CPU-bound; parallelism uses rayon.
+- **No async in the core.** The work is CPU-bound; the CLI parallelises it with rayon.
   See [ADR 0004](docs/adr/0004-rayon-not-async.md).
 - **No `unwrap`, `expect` or `panic!` outside tests.** Clippy enforces this.
 
@@ -175,7 +175,9 @@ happen.
 
 - **Testing.** Unit tests sit next to the code, integration tests run the
   real binary on fixtures, `proptest` checks invariants, and `insta`
-  snapshots pin whole outputs. Pruning logic aims for 100% coverage.
+  snapshots pin whole outputs. CI requires 95% line coverage for
+  `prunecss-core` and 80% for the workspace; matching and pruning logic
+  aims for 100%.
 - **Errors.** The core uses its own `PruneError` type with a 1-based
   `SourceLocation`; the CLI wraps errors with `anyhow` context.
 - **Performance.** Borrow, don't copy: class names stay `&str` slices of the
