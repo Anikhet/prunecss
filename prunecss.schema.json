@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "prunecss configuration",
+  "description": "Settings for a prunecss run. Paths are relative to the config file.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Location of this schema, for editor autocompletion.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "content": {
+      "description": "Files whose class names count as used: files, directories or globs\nsuch as `src/**/*.{html,jsx,tsx,vue,svelte,astro}`.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "css": {
+      "description": "Stylesheets to prune: files, directories or globs such as\n`dist/**/*.css`.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "fontFace": {
+      "description": "Also remove `@font-face` rules whose family nothing uses.",
+      "type": "boolean",
+      "default": false
+    },
+    "gitignore": {
+      "description": "Skip files listed in `.gitignore` and `.ignore` when expanding globs.\nFiles named directly are always used. Defaults to `true`.",
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": null
+    },
+    "keyframes": {
+      "description": "Also remove `@keyframes` that nothing uses.",
+      "type": "boolean",
+      "default": false
+    },
+    "minify": {
+      "description": "Print the result without whitespace.",
+      "type": "boolean",
+      "default": false
+    },
+    "output": {
+      "description": "Where to write the result: a file when pruning one stylesheet, a\ndirectory when pruning several. Omit to print a single stylesheet to\nstandard output. Ignored when stylesheets are given on the command\nline: then only `--output` decides.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "safelist": {
+      "description": "Names to keep whatever the content says. Each entry is an exact name\nor a `/regex/`. A plain list means `standard`.",
+      "$ref": "#/$defs/SafelistConfig"
+    },
+    "variables": {
+      "description": "Also remove custom properties (`--name`) that nothing reads.",
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "SafelistByKind": {
+      "description": "Safelist patterns by kind.",
+      "type": "object",
+      "properties": {
+        "deep": {
+          "description": "Keep matching selectors and every rule nested inside them.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "greedy": {
+          "description": "Keep any selector containing a matching class or id.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "keyframes": {
+          "description": "Never remove matching `@keyframes`.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "standard": {
+          "description": "A matching class or id counts as used.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "variables": {
+          "description": "Never remove matching custom properties (written without `--`).",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SafelistConfig": {
+      "description": "The `safelist` setting: a plain list, or patterns by kind.",
+      "anyOf": [
+        {
+          "description": "Shorthand for `{ \"standard\": [...] }`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "description": "Patterns by kind, as in PurgeCSS.",
+          "$ref": "#/$defs/SafelistByKind"
+        }
+      ]
+    }
+  }
+}

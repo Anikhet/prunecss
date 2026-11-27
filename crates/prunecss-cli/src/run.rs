@@ -1,0 +1,695 @@
+//! What each command does, once arguments and config are resolved.
+
+use std::borrow::Cow;
+use std::io::{Read as _, Write as _};
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use anyhow::{Context, Result, bail};
+use prunecss_core::{ParseWarning, PruneOptions, PruneOutput, defined_names, extract_classes};
+use rayon::prelude::*;
+use rustc_hash::FxHashSet;
+use serde::Serialize;
+
+use crate::files;
+
+/// Patterns and the directory they are relative to.
+#[derive(Debug, Clone)]
+pub(crate) struct Patterns {
+    pub(crate) patterns: Vec<String>,
+    pub(crate) base: PathBuf,
+}
+
+/// Everything `prune` needs, with CLI flags and config already merged.
+#[derive(Debug)]
+#[expect(clippy::struct_excessive_bools, reason = "independent on/off settings")]
+pub(crate) struct PruneSettings {
+    pub(crate) css: Patterns,
+    pub(crate) content: Patterns,
+    /// `None` or `-` means standard output.
+    pub(crate) output: Option<PathBuf>,
+    pub(crate) options: PruneOptions,
+    pub(crate) gitignore: bool,
+    pub(crate) check: bool,
+    pub(crate) stats: bool,
+    pub(crate) json: bool,
+}
+
+/// How a successful run ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    /// Nothing to report: pruned, or `--check` found nothing to remove.
+    Clean,
+    /// `--check` found CSS that pruning would remove.
+    WouldRemove,
+}
+
+/// One pruned stylesheet, as reported by `--stats` and `--json`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileReport {
+    path: String,
+    output: Option<String>,
+    removed_selectors: usize,
+    removed_keyframes: usize,
+    removed_font_faces: usize,
+    removed_variables: usize,
+    bytes_before: usize,
+    bytes_after: usize,
+    /// Rules the parser could not read and dropped.
+    warnings: Vec<WarningReport>,
+}
+
+#[derive(Debug, Serialize)]
+struct WarningReport {
+    message: String,
+    line: Option<u32>,
+    column: Option<u32>,
+}
+
+impl FileReport {
+    /// Whether the output differs from the input in content: something was
+    /// removed, or an unreadable rule was dropped.
+    fn removed_anything(&self) -> bool {
+        self.removed_selectors
+            + self.removed_keyframes
+            + self.removed_font_faces
+            + self.removed_variables
+            + self.warnings.len()
+            > 0
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Report {
+    files: Vec<FileReport>,
+    content_files: usize,
+    used_names: usize,
+    duration_ms: u128,
+}
+
+/// A stylesheet to prune: from a file, or from standard input.
+enum Input {
+    File(PathBuf),
+    Stdin,
+}
+
+impl Input {
+    fn label(&self) -> String {
+        match self {
+            Self::File(path) => display(path),
+            Self::Stdin => "<stdin>".to_owned(),
+        }
+    }
+}
+
+pub(crate) fn prune(settings: &PruneSettings) -> Result<Outcome> {
+    let start = Instant::now();
+    let output = settings
+        .output
+        .as_deref()
+        .filter(|path| *path != Path::new("-"))
+        .map(absolute);
+    let inputs = css_inputs(settings, output.as_deref())?;
+    let to_stdout = !settings.check && output.is_none();
+    if to_stdout && inputs.len() > 1 {
+        bail!(
+            "{} stylesheets matched; use --output <DIR> to write them, or --check",
+            inputs.len()
+        );
+    }
+    if to_stdout && settings.json {
+        bail!("--json needs the CSS to go elsewhere: add --output or --check");
+    }
+    // Decide every destination before reading or writing anything, so a bad
+    // plan (a collision, an input about to be overwritten) changes nothing.
+    let destinations = if settings.check {
+        vec![None; inputs.len()]
+    } else {
+        plan_outputs(&inputs, output.as_deref(), settings.output.as_deref())?
+    };
+
+    let content_files = content_files(&settings.content, settings.gitignore)?;
+    let output_dir = output
+        .as_deref()
+        .filter(|output| inputs.len() > 1 || is_directory_like(output, settings.output.as_deref()));
+    let sources = read_all(&content_files)?;
+    check_destinations(&destinations, &inputs, &content_files, &sources, output_dir)?;
+    let used = used_names(&sources);
+    if used.is_empty() {
+        bail!(
+            "the content files contain no class or id names, so every class would look \
+             unused; refusing to prune. Check the --content patterns"
+        );
+    }
+
+    let results: Vec<(String, PruneOutput)> = inputs
+        .par_iter()
+        .map(|input| {
+            let css = read_input(input)?;
+            let pruned = prunecss_core::prune(&css, &used, &settings.options)
+                .with_context(|| format!("pruning {}", input.label()))?;
+            Ok((css, pruned))
+        })
+        .collect::<Result<_>>()?;
+
+    let mut reports = Vec::with_capacity(results.len());
+    for ((input, destination), (css, pruned)) in inputs.iter().zip(&destinations).zip(&results) {
+        if pruned.removed_selectors > 0 && pruned.kept_named_selectors == 0 {
+            eprintln!(
+                "warning: none of the classes or ids in {} are used by the content files; \
+                 check the --content patterns",
+                input.label()
+            );
+        }
+        let dropped: Vec<&ParseWarning> = pruned.warnings.iter().filter(|w| w.dropped).collect();
+        print_warnings(&input.label(), &dropped);
+        if !settings.check {
+            write_output(destination.as_deref(), &pruned.css)?;
+        }
+        reports.push(FileReport {
+            path: input.label(),
+            output: destination.as_deref().map(display),
+            removed_selectors: pruned.removed_selectors,
+            removed_keyframes: pruned.removed_keyframes,
+            removed_font_faces: pruned.removed_font_faces,
+            removed_variables: pruned.removed_variables,
+            bytes_before: css.len(),
+            bytes_after: pruned.css.len(),
+            warnings: pruned
+                .warnings
+                .iter()
+                .filter(|warning| warning.dropped)
+                .map(|warning| WarningReport {
+                    message: warning.message.clone(),
+                    line: warning.location.map(|location| location.line),
+                    column: warning.location.map(|location| location.column),
+                })
+                .collect(),
+        });
+    }
+
+    let report = Report {
+        content_files: content_files.len(),
+        used_names: used.len(),
+        duration_ms: start.elapsed().as_millis(),
+        files: reports,
+    };
+    if settings.json {
+        let mut json = serde_json::to_string_pretty(&report)?;
+        json.push('\n');
+        print_stdout(&json)?;
+    } else if settings.stats || settings.check {
+        print_summary(&report, settings.check);
+    }
+
+    let would_remove = report.files.iter().any(FileReport::removed_anything);
+    Ok(if settings.check && would_remove {
+        Outcome::WouldRemove
+    } else {
+        Outcome::Clean
+    })
+}
+
+pub(crate) fn scan(content: &Patterns, css: Option<&Path>, gitignore: bool) -> Result<()> {
+    let files = content_files(content, gitignore)?;
+    let sources = read_all(&files)?;
+    let mut names: Vec<Cow<'_, str>> = used_names(&sources).into_iter().collect();
+    if let Some(css) = css {
+        let defined =
+            defined_names(&read(css)?).with_context(|| format!("reading {}", display(css)))?;
+        names.retain(|name| defined.contains(name.as_ref()));
+    }
+    // Hash-set order is random; print sorted so output is reproducible.
+    names.sort_unstable();
+    let text: String = names
+        .iter()
+        .flat_map(|name| [name.as_ref(), "\n"])
+        .collect();
+    print_stdout(&text)
+}
+
+fn css_inputs(settings: &PruneSettings, output: Option<&Path>) -> Result<Vec<Input>> {
+    let patterns = &settings.css.patterns;
+    if patterns.is_empty() {
+        bail!("no stylesheet given: pass one, or set `css` in prunecss.json");
+    }
+    if patterns.iter().any(|pattern| pattern == "-") {
+        if patterns.len() > 1 {
+            bail!("`-` (standard input) can't be combined with other stylesheets");
+        }
+        return Ok(vec![Input::Stdin]);
+    }
+    let expanded = files::expand(patterns, &settings.css.base, settings.gitignore)?;
+    for (pattern, error) in &expanded.errors {
+        eprintln!("warning: stylesheet pattern `{pattern}`: {error}");
+    }
+    if let Some(pattern) = expanded.unmatched.first() {
+        bail!("no stylesheet matched `{pattern}`");
+    }
+    let matched = expanded.files;
+    // Leave earlier results alone: with `css: ["**/*.css"]` and an output
+    // directory inside the project, the next run would prune its own output.
+    // Only glob and directory matches are skipped. A file the user named is
+    // always an input, so the overwrite check in `plan_outputs` protects it.
+    let mut skipped = 0_usize;
+    let mut files = Vec::with_capacity(matched.len());
+    let output_dir = output.filter(|output| is_directory_like(output, settings.output.as_deref()));
+    let lexical_dir = output_dir.map(files::normalize);
+    // By real path too, so an output directory reached through a symlink or
+    // spelled in another case on a case-insensitive file system still counts.
+    let canonical_dir = output_dir.and_then(|dir| dir.canonicalize().ok());
+    for file in &matched {
+        let inside_output = lexical_dir
+            .as_ref()
+            .is_some_and(|dir| files::normalize(file).starts_with(dir))
+            || canonical_dir
+                .as_ref()
+                .is_some_and(|dir| file.canonicalize().is_ok_and(|file| file.starts_with(dir)));
+        if inside_output && !named_explicitly(file, patterns, &settings.css.base) {
+            skipped += 1;
+        } else {
+            files.push(file.clone());
+        }
+    }
+    if skipped > 0 {
+        eprintln!("note: skipping {skipped} stylesheet(s) inside the output directory");
+    }
+    if let Some(dir) = lexical_dir.filter(|_| files.is_empty()) {
+        bail!(
+            "every matched stylesheet is inside the output directory {}",
+            display(&dir)
+        );
+    }
+    Ok(files.into_iter().map(Input::File).collect())
+}
+
+fn named_explicitly(file: &Path, patterns: &[String], base: &Path) -> bool {
+    let file = files::normalize(file);
+    patterns
+        .iter()
+        .any(|pattern| files::normalize(&base.join(pattern)) == file)
+}
+
+/// `--output` names a directory if it already is one, or ends with `/`.
+fn is_directory_like(output: &Path, as_given: Option<&Path>) -> bool {
+    output.is_dir()
+        || as_given.is_some_and(|given| given.as_os_str().to_string_lossy().ends_with(['/', '\\']))
+}
+
+fn absolute(path: &Path) -> PathBuf {
+    std::env::current_dir().map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
+}
+
+/// Works out where each result goes, refusing plans that would lose data.
+///
+/// In directory mode, paths are mirrored from the inputs' deepest common
+/// parent (after resolving `..`), so a destination can never leave the
+/// output directory.
+fn plan_outputs(
+    inputs: &[Input],
+    output: Option<&Path>,
+    as_given: Option<&Path>,
+) -> Result<Vec<Option<PathBuf>>> {
+    let Some(output) = output else {
+        return Ok(vec![None; inputs.len()]);
+    };
+    let output = files::normalize(output);
+    let input_paths: Vec<PathBuf> = inputs
+        .iter()
+        .filter_map(|input| match input {
+            Input::File(path) => Some(files::normalize(path)),
+            Input::Stdin => None,
+        })
+        .collect();
+
+    let directory = inputs.len() > 1 || is_directory_like(&output, as_given);
+    let destinations: Vec<PathBuf> = if directory {
+        let common = common_parent(&input_paths);
+        inputs
+            .iter()
+            .map(|input| match input {
+                Input::File(path) => {
+                    let path = files::normalize(path);
+                    let relative = common
+                        .as_deref()
+                        .and_then(|common| path.strip_prefix(common).ok())
+                        .map_or_else(
+                            || PathBuf::from(path.file_name().unwrap_or_default()),
+                            Path::to_path_buf,
+                        );
+                    output.join(relative)
+                }
+                Input::Stdin => output.join("stdin.css"),
+            })
+            .collect()
+    } else {
+        vec![output]
+    };
+
+    let mut seen = std::collections::BTreeSet::new();
+    for destination in &destinations {
+        if !seen.insert(destination) {
+            bail!(
+                "two stylesheets would both be written to {}",
+                display(destination)
+            );
+        }
+        if input_paths.contains(destination) {
+            bail!(
+                "refusing to overwrite the input {}; choose a different --output",
+                display(destination)
+            );
+        }
+    }
+    Ok(destinations.into_iter().map(Some).collect())
+}
+
+/// The deepest directory containing every path, if they share one.
+fn common_parent(paths: &[PathBuf]) -> Option<PathBuf> {
+    let mut common = paths.first()?.parent()?.to_path_buf();
+    for path in &paths[1..] {
+        while !path.starts_with(&common) {
+            if !common.pop() {
+                return None;
+            }
+        }
+    }
+    Some(common)
+}
+
+/// Refuses a plan that would replace an input or a content file, or write
+/// outside the output directory, before anything is written.
+///
+/// Files are compared by identity (device and inode on Unix, volume and file
+/// index on Windows), which also catches symlinks, hard links and other
+/// spellings of the same file on case-insensitive file systems.
+fn check_destinations(
+    destinations: &[Option<PathBuf>],
+    inputs: &[Input],
+    content_files: &[PathBuf],
+    sources: &[Source],
+    output_dir: Option<&Path>,
+) -> Result<()> {
+    let mut existing = Vec::new();
+    for destination in destinations.iter().flatten() {
+        if let Some(dir) = output_dir {
+            check_inside(destination, dir)?;
+        }
+        let found = same_file::Handle::from_path(destination).and_then(|handle| {
+            let size = std::fs::metadata(destination)?.len();
+            Ok(Existing {
+                path: destination,
+                handle,
+                size,
+            })
+        });
+        match found {
+            Ok(found) => existing.push(found),
+            // Nothing there yet, so nothing to overwrite.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).with_context(|| format!("checking {}", display(destination)));
+            }
+        }
+    }
+    if existing.is_empty() {
+        return Ok(());
+    }
+    let input_files: Vec<&PathBuf> = inputs
+        .iter()
+        .filter_map(|input| match input {
+            Input::File(path) => Some(path),
+            Input::Stdin => None,
+        })
+        .collect();
+    if let Some((destination, input)) = overwritten(&existing, &input_files) {
+        bail!(
+            "refusing to overwrite the input {}; choose a different --output",
+            same_as(destination, input)
+        );
+    }
+    // There can be thousands of content files. One can only be the same file
+    // as a destination of the same size, and the sizes are known from
+    // reading them, so only those few are opened again to compare.
+    let candidates: Vec<&PathBuf> = content_files
+        .iter()
+        .zip(sources)
+        .filter(|(_, source)| existing.iter().any(|found| found.size == source.size))
+        .map(|(path, _)| path)
+        .collect();
+    if let Some((destination, content)) = overwritten(&existing, &candidates) {
+        bail!(
+            "refusing to overwrite the content file {}; choose a different --output",
+            same_as(destination, content)
+        );
+    }
+    Ok(())
+}
+
+/// Names a file, and the other path it is reached by if that differs.
+fn same_as(destination: &Path, file: &Path) -> String {
+    let (destination, file) = (display(destination), display(file));
+    if destination == file {
+        file
+    } else {
+        format!("{file} (it is the same file as {destination})")
+    }
+}
+
+/// The first of `files` that an existing destination is the same file as,
+/// with that destination. A file that can't be opened is skipped: reading
+/// it fails later anyway.
+fn overwritten<'a, 'f>(
+    existing: &[Existing<'a>],
+    files: &[&'f PathBuf],
+) -> Option<(&'a Path, &'f Path)> {
+    files.par_iter().find_map_first(|file| {
+        let handle = same_file::Handle::from_path(file).ok()?;
+        existing
+            .iter()
+            .find(|found| found.handle == handle)
+            .map(|found| (found.path.as_path(), file.as_path()))
+    })
+}
+
+/// Refuses a destination whose directory resolves outside `dir`, as when a
+/// subdirectory of the output directory is a symlink to somewhere else.
+fn check_inside(destination: &Path, dir: &Path) -> Result<()> {
+    // A missing output directory has no symlinks inside it.
+    let Ok(canonical_dir) = dir.canonicalize() else {
+        return Ok(());
+    };
+    // The deepest directory that exists; the rest will be created as real
+    // directories under it.
+    let existing = destination
+        .ancestors()
+        .skip(1)
+        .find_map(|ancestor| ancestor.canonicalize().ok());
+    if existing.is_some_and(|parent| !parent.starts_with(&canonical_dir)) {
+        bail!(
+            "refusing to write {}: its directory resolves outside the output directory {}",
+            display(destination),
+            display(dir)
+        );
+    }
+    Ok(())
+}
+
+/// A planned destination that already exists.
+struct Existing<'a> {
+    path: &'a PathBuf,
+    handle: same_file::Handle,
+    size: u64,
+}
+
+/// Expands the content patterns, refusing to continue without any files:
+/// with nothing scanned, every class looks unused and all CSS would go.
+fn content_files(content: &Patterns, gitignore: bool) -> Result<Vec<PathBuf>> {
+    if content.patterns.is_empty() {
+        bail!("no content given: pass --content, or set `content` in prunecss.json");
+    }
+    let expanded = files::expand(&content.patterns, &content.base, gitignore)?;
+    for pattern in &expanded.unmatched {
+        eprintln!("warning: content pattern `{pattern}` matched no files");
+    }
+    // Like an unmatched pattern: classes in a file that was not read look
+    // unused, so say so.
+    for (pattern, error) in &expanded.errors {
+        eprintln!("warning: content pattern `{pattern}`: {error}; anything there was not scanned");
+    }
+    if expanded.files.is_empty() {
+        bail!(
+            "no content files matched, so every class would look unused; \
+             refusing to prune. Check the --content patterns"
+        );
+    }
+    Ok(expanded.files)
+}
+
+/// A content file's text.
+struct Source {
+    text: String,
+    /// The size in bytes on disk, before invalid UTF-8 was replaced.
+    size: u64,
+}
+
+/// Reads content files in parallel. Invalid UTF-8 is replaced rather than
+/// fatal: a stray binary file in a glob shouldn't stop the run.
+fn read_all(paths: &[PathBuf]) -> Result<Vec<Source>> {
+    paths
+        .par_iter()
+        .map(|path| {
+            std::fs::read(path)
+                .map(|bytes| Source {
+                    size: bytes.len() as u64,
+                    text: String::from_utf8_lossy(&bytes).into_owned(),
+                })
+                .with_context(|| format!("reading {}", display(path)))
+        })
+        .collect()
+}
+
+fn read(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path).with_context(|| format!("reading {}", display(path)))
+}
+
+fn read_input(input: &Input) -> Result<String> {
+    match input {
+        Input::File(path) => read(path),
+        Input::Stdin => {
+            let mut css = String::new();
+            std::io::stdin()
+                .read_to_string(&mut css)
+                .context("reading standard input")?;
+            Ok(css)
+        }
+    }
+}
+
+/// Collects candidate names across files in parallel, borrowing from them.
+fn used_names(sources: &[Source]) -> FxHashSet<Cow<'_, str>> {
+    sources
+        .par_iter()
+        .fold(FxHashSet::default, |mut names, source| {
+            names.extend(extract_classes(&source.text));
+            names
+        })
+        .reduce(FxHashSet::default, |mut larger, mut smaller| {
+            if larger.len() < smaller.len() {
+                std::mem::swap(&mut larger, &mut smaller);
+            }
+            larger.extend(smaller);
+            larger
+        })
+}
+
+/// Writes one result to its planned destination, or standard output.
+fn write_output(destination: Option<&Path>, css: &str) -> Result<()> {
+    match destination {
+        Some(destination) => write_file(destination, css),
+        None => print_stdout(css),
+    }
+}
+
+/// Writes `text` to standard output. A reader that stops early
+/// (`prunecss scan | head`) is not an error: the rest is simply not wanted.
+pub(crate) fn print_stdout(text: &str) -> Result<()> {
+    let mut stdout = std::io::stdout().lock();
+    match stdout
+        .write_all(text.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        result => result.context("writing to standard output"),
+    }
+}
+
+/// Writes to a temporary file next to `destination`, then renames it over
+/// the destination: a failed write never leaves a truncated file, and a
+/// destination that is a hard link or symlink is replaced, not written
+/// through.
+fn write_file(destination: &Path, css: &str) -> Result<()> {
+    let parent = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", display(parent)))?;
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".prunecss-").suffix(".tmp");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        // What `fs::write` would create (narrowed by the umask), instead of
+        // the private 0600 of a temporary file.
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let writing = || format!("writing {}", display(destination));
+    let mut temp = builder.tempfile_in(parent).with_context(writing)?;
+    temp.write_all(css.as_bytes()).with_context(writing)?;
+    #[cfg(unix)]
+    if let Ok(metadata) = std::fs::metadata(destination) {
+        // Keep the mode of the file being replaced.
+        std::fs::set_permissions(temp.path(), metadata.permissions()).with_context(writing)?;
+    }
+    temp.persist(destination)
+        .map_err(|err| err.error)
+        .with_context(writing)?;
+    Ok(())
+}
+
+/// Shows each rule the parser dropped, so nothing disappears silently.
+fn print_warnings(label: &str, warnings: &[&ParseWarning]) {
+    const SHOWN: usize = 10;
+    for warning in warnings.iter().take(SHOWN) {
+        let position = warning
+            .location
+            .map(|location| format!("{}:{}:", location.line, location.column))
+            .unwrap_or_default();
+        eprintln!(
+            "warning: {label}:{position} dropped a rule or declaration that could not be parsed: {}",
+            warning.message
+        );
+    }
+    if warnings.len() > SHOWN {
+        eprintln!("warning: {label}: … and {} more", warnings.len() - SHOWN);
+    }
+}
+
+fn print_summary(report: &Report, check: bool) {
+    let verb = if check { "would remove" } else { "removed" };
+    for file in &report.files {
+        let saved = file.bytes_before.saturating_sub(file.bytes_after);
+        eprintln!(
+            "{}: {verb} {} selectors, {} @keyframes, {} @font-face, {} variables, {} unreadable; {} -> {} bytes ({saved} saved)",
+            file.path,
+            file.removed_selectors,
+            file.removed_keyframes,
+            file.removed_font_faces,
+            file.removed_variables,
+            file.warnings.len(),
+            file.bytes_before,
+            file.bytes_after,
+        );
+    }
+    eprintln!(
+        "prunecss: {} stylesheet(s), {} content file(s), {} candidate names, {} ms",
+        report.files.len(),
+        report.content_files,
+        report.used_names,
+        report.duration_ms
+    );
+}
+
+/// Paths are shown relative to the current directory where possible, with
+/// `/` on every platform, so messages are short and snapshots match.
+fn display(path: &Path) -> String {
+    let cwd = std::env::current_dir().ok();
+    let shown = cwd
+        .as_deref()
+        .and_then(|cwd| path.strip_prefix(cwd).ok())
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .unwrap_or(path);
+    shown.to_string_lossy().replace('\\', "/")
+}

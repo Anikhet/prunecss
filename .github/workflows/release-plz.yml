@@ -1,0 +1,154 @@
+# Release automation with release-plz (https://release-plz.dev).
+# See docs/RELEASING.md for the one-time setup and the normal release flow.
+#
+# This file name (`release-plz.yml`) and the `release` environment are what
+# crates.io Trusted Publishing is configured to trust. Renaming either breaks
+# publishing until the crates.io settings are updated too.
+name: Release-plz
+
+# No workflow-level concurrency on purpose; see the release job below.
+on: # zizmor: ignore[concurrency-limits]
+  push:
+    branches: [main]
+
+# Nothing by default; each job asks for exactly what it needs.
+permissions: {}
+
+jobs:
+  # Decides whether there is anything to publish, outside the `release`
+  # environment. Without this, every push to `main` would start the
+  # environment-gated job below and wait for a required reviewer even though
+  # release-plz then publishes nothing.
+  release-plz-check:
+    name: Release-plz check
+    # Forks have neither the crates.io trust nor the environment.
+    if: github.repository_owner == 'Anikhet'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # read Cargo.toml and the release tags
+    outputs:
+      unreleased: ${{ steps.tags.outputs.unreleased }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history includes every tag.
+          fetch-depth: 0
+          persist-credentials: false
+      # Both crates share the workspace version. A merged release PR bumps it,
+      # and release-plz tags each crate once it is published, so a missing tag
+      # means there is something to release (or a release that stopped
+      # halfway and should be retried).
+      - name: Check whether the workspace version is tagged
+        id: tags
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          unreleased=false
+          for tag in "prunecss-core-v$version" "prunecss-v$version"; do
+            if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+              echo "$tag exists"
+            else
+              echo "$tag is missing"
+              unreleased=true
+            fi
+          done
+          echo "unreleased=$unreleased" >> "$GITHUB_OUTPUT"
+
+  # Publishes the crates, tags them and creates GitHub releases, but only when
+  # the commit on `main` is a merged release PR (`release_always = false`).
+  release-plz-release:
+    name: Release-plz release
+    needs: release-plz-check
+    if: needs.release-plz-check.outputs.unreleased == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The crates.io trusted publisher is bound to this environment, so other
+    # jobs (and other workflows) in this repository cannot publish even though
+    # they can request an OIDC token.
+    environment: release
+    # No concurrency group on purpose: GitHub keeps only one pending run per
+    # group and silently drops the older one, which could skip a release.
+    # (release-plz's own guidance; each run releases only what is unpublished,
+    # so two overlapping runs are safe.)
+    permissions:
+      contents: write # push tags and create GitHub releases
+      pull-requests: read # check that the merged commit came from a release PR
+      id-token: write # crates.io Trusted Publishing (OIDC); no stored token
+    outputs:
+      cli-tag: ${{ steps.cli-tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # release-plz needs the full history to find the previous release.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
+      # No rust-cache here: published crates must never be built from a cache
+      # that some other run wrote.
+      - name: Run release-plz
+        id: release-plz
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release
+        env:
+          # Used for tags and GitHub releases. With id-token: write and no
+          # CARGO_REGISTRY_TOKEN, release-plz performs the crates.io Trusted
+          # Publishing exchange itself (no rust-lang/crates-io-auth-action).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Find the prunecss CLI tag, if the CLI was released
+        id: cli-tag
+        env:
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        run: |
+          tag="$(jq -r '.[]? | select(.package_name == "prunecss") | .tag' <<< "${RELEASES:-[]}")"
+          echo "CLI tag: ${tag:-<none>}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+  # Tags pushed with GITHUB_TOKEN do not trigger other workflows, so the binary
+  # build is called directly instead of waiting for a `push: tags` event.
+  release-binaries:
+    name: Release binaries
+    needs: release-plz-release
+    if: needs.release-plz-release.outputs.cli-tag != ''
+    permissions:
+      contents: write # upload assets to the GitHub release
+      id-token: write # sign build provenance (Sigstore)
+      attestations: write # store the attestations
+    # A job-level reusable workflow is resolved by GitHub from this same commit
+    # before any runner starts, so the runtime-filesystem risk behind zizmor's
+    # self-repository audit does not apply here. Switch to the newer `$/...`
+    # form once actionlint understands it (1.7.12 rejects it).
+    uses: ./.github/workflows/release-binaries.yml # zizmor: ignore[self-repository]
+    with:
+      tag: ${{ needs.release-plz-release.outputs.cli-tag }}
+
+  # Opens or updates the release PR (version bumps + CHANGELOG.md).
+  release-plz-pr:
+    name: Release-plz PR
+    if: github.repository_owner == 'Anikhet'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # push the release PR branch
+      pull-requests: write # open and update the release PR
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          # Installs the toolchain pinned in rust-toolchain.toml.
+          rustup toolchain install --no-self-update
+      - name: Run release-plz
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in prunecss crashed, failed or behaved wrongly. For CSS that was wrongly removed, use the "CSS was wrongly removed" form instead.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please search [existing issues](https://github.com/Anikhet/prunecss/issues) first.
+
+        - If prunecss **removed CSS your page needs**, please use the "CSS was wrongly removed" form instead.
+        - If this is a **security problem** (for example a crash or hang on crafted input, or files written outside the output path), do not post it here. See [SECURITY.md](https://github.com/Anikhet/prunecss/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: prunecss version
+      description: Output of `prunecss --version`, or the git commit if you built from source.
+      placeholder: prunecss 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15, Ubuntu 24.04, Windows 11, ...
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and config
+      description: The exact command you ran, and your config file if you use one.
+      render: shell
+      placeholder: prunecss prune styles.css --content index.html
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input files
+      description: The smallest CSS and HTML/JS that shows the problem. Paste text, not screenshots.
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the full error message or output.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Other context, links, or ideas about the cause. If you used an AI tool to find or describe this bug, say so here.
+    validations:
+      required: false

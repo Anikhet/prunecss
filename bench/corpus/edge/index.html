@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head><meta charset="utf-8"><title>Edge cases</title></head>
+<body>
+  <nav id="site-nav"><a class="nav-link" href="#">Home</a></nav>
+
+  <table><tr><td>cell</td></tr></table>
+  <p hidden>secret</p>
+  <input type="checkbox">
+  <div class="card"><div class="col-6">column</div></div>
+  <div class="card card--flat">flat</div>
+  <div class="alert"><button class="close">x</button></div>
+  <ul class="menu"><li class="menu-item">one</li></ul>
+
+  <div class="md:flex w-1/2 w-[10px] hover:bg-red-500 !font-bold">tailwind</div>
+  <div class="spinner brand">loading</div>
+
+  <p class=unquoted>unquoted attribute</p>
+  <p CLASS="upper-attr">upper-case attribute name</p>
+  <p class="multiline-a
+            multiline-b">value across lines</p>
+
+  <div id="dialog"></div>
+  <script>
+    const dialog = document.getElementById('dialog');
+    document.querySelector('.menu').addEventListener('click', () => {
+      dialog.classList.add('is-open');
+      document.body.insertAdjacentHTML('beforeend', '<div class="modal-backdrop"></div>');
+    });
+  </script>
+</body>
+</html>

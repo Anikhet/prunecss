@@ -1,0 +1,1 @@
+@keyframes spin{to{transform:rotate(1turn)}}@font-face{font-family:X;src:url(x.woff2)}@property --x{syntax:"<length>";inherits:false;initial-value:0}ÿ

@@ -1,0 +1,8 @@
+# Build output and libFuzzer's working files. Crash reproducers worth keeping
+# go in `regressions/`, which is tracked.
+target/
+artifacts/
+coverage/
+# Where local runs and CI write newly discovered inputs, so the committed
+# seeds in `corpus/` stay small and reviewed.
+corpus-work/

@@ -1,32 +1,91 @@
 [workspace]
 resolver = "3"
-members = ["crates/prunecss-core", "crates/prunecss-cli"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-rust-version = "1.85"
+# Verified minimum: let chains (`if let … && let …`) need 1.88. CI checks it.
+rust-version = "1.88"
+repository = "https://github.com/Anikhet/prunecss"
+keywords = ["css", "purgecss", "unused-css", "tree-shaking", "minify"]
+categories = ["command-line-utilities", "web-programming", "development-tools"]
 
 [workspace.dependencies]
-prunecss-core = { path = "crates/prunecss-core" }
+# Internal crates need a version as well as a path so they can be published.
+prunecss-core = { path = "crates/prunecss-core", version = "0.1.0" }
 anyhow = "1"
-thiserror = "2"
-rstest = "0.25"
+rstest = "0.29"
+proptest = "1"
+insta = "1"
+clap = { version = "4", features = ["derive"] }
+# Linear-time matching: safelist patterns come from user config and must not
+# allow catastrophic backtracking. Default features keep full Unicode support
+# (`(?i)`, `\p{L}`), which class names in any language need.
+memchr = "2.7"
+regex = "1.13"
+clap_complete = "4.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+schemars = "1.2"
+ignore = "0.4.35"
+globset = "0.4.22"
+rayon = "1.12"
+rustc-hash = "2.1"
+# File identity (device + inode, or volume + file index on Windows).
+same-file = "1.0.6"
+tempfile = "3.27"
+# Lightning CSS has never left 1.0.0-alpha; pin exactly so upgrades are deliberate.
+lightningcss = { version = "=1.0.0-alpha.72", default-features = false }
+# Micro-benchmarks only (crates/prunecss-core/benches); plots are not needed.
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
 [workspace.lints.rust]
 missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
 unsafe_code = "forbid"
+unused_qualifications = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+# CLAUDE.md rules, enforced mechanically.
+allow_attributes = "deny"
+allow_attributes_without_reason = "warn"
 unwrap_used = "warn"
 expect_used = "warn"
+panic = "warn"
+todo = "warn"
+dbg_macro = "warn"
+# Output belongs to the CLI; the library must never print.
+print_stdout = "warn"
+print_stderr = "warn"
+# Iteration order over hash sets is random, which would make CSS output and
+# snapshots differ between runs.
+iter_over_hash_type = "warn"
 redundant_clone = "warn"
+implicit_clone = "warn"
 needless_collect = "warn"
 large_enum_variant = "warn"
+map_err_ignore = "warn"
 
 [profile.release]
 lto = true
 codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+# Release speed with debug symbols, for profilers such as samply.
+[profile.profiling]
+inherits = "release"
+strip = "none"
+debug = "line-tables-only"
+
+# Snapshot diffing is much faster when insta and its differ are optimised.
+[profile.dev.package.insta]
+opt-level = 3
+
+[profile.dev.package.similar]
+opt-level = 3

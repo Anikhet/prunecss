@@ -1,0 +1,56 @@
+/* Edge-case corpus: each rule is a known point where unused-CSS tools
+   disagree. Comments name the case; the matching markup is in the content
+   files next to this one. Every rule here IS used by the content, except the
+   ones marked "unused". */
+
+/* 1. id selectors: markup uses id="site-nav", never class="site-nav". */
+#site-nav { position: sticky; }
+#site-nav .nav-link { color: navy; }
+
+/* 2. tag selectors */
+table { border-collapse: collapse; }
+blockquote { margin: 0; }            /* unused: no <blockquote> anywhere */
+
+/* 3. attribute selectors */
+[hidden] { display: none !important; }
+input[type="checkbox"] { accent-color: teal; }
+[data-theme="dark"] .card { background: #111; }
+[class*="col-"] { padding: 0 8px; }
+
+/* 4. classes added from JavaScript strings, not class attributes */
+.is-open { display: block; }
+.modal-backdrop { opacity: .5; }
+
+/* 5. framework syntaxes */
+.vue-active { color: green; }        /* Vue :class="{ 'vue-active': on }" */
+.clsx-on { color: red; }             /* JSX className={clsx('btn', on && 'clsx-on')} */
+.tpl-literal { color: blue; }        /* JSX className={`card tpl-literal`} */
+.svelte-dir { color: purple; }       /* Svelte class:svelte-dir={on} */
+
+/* 6. escaped Tailwind-style names */
+.md\:flex { display: flex; }
+.w-1\/2 { width: 50%; }
+.w-\[10px\] { width: 10px; }
+.hover\:bg-red-500:hover { background: red; }
+.\!font-bold { font-weight: 700 !important; }
+
+/* 7. functional pseudo-classes */
+.card:not(.card--flat) { box-shadow: 0 1px 2px #0003; }
+:is(.alert, .toast) .close { float: right; }
+.menu:has(> .menu-item) { padding: 4px; }
+
+/* 8. keyframes, font-face, custom properties */
+@keyframes spin { to { transform: rotate(1turn); } }
+.spinner { animation: spin 1s linear infinite; }
+@font-face { font-family: "Inter"; src: url(inter.woff2) format("woff2"); }
+:root { --brand: #0af; }
+.brand { color: var(--brand); }
+
+/* 9. attribute-quoting and case variations in markup */
+.unquoted { color: orange; }         /* <p class=unquoted> */
+.upper-attr { color: pink; }         /* <p CLASS="upper-attr"> */
+.multiline-b { color: gray; }        /* class="multiline-a\n  multiline-b" */
+
+/* 10. clearly unused rules both tools should drop */
+.never-used { color: black; }
+#never-used-id { color: black; }

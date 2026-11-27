@@ -1,0 +1,146 @@
+name: Fuzz
+
+# Pull requests check that the fuzz targets still compile and replay the
+# committed seeds and regressions once; actually fuzzing them runs once a day
+# (and on demand), time-boxed per target.
+on:
+  pull_request:
+    paths:
+      - "crates/prunecss-core/**"
+      - "fuzz/**"
+      # Workspace dependency versions (Lightning CSS) reach the fuzz build.
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/fuzz.yml"
+  schedule:
+    # Daily, at an off-peak minute.
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "How long to fuzz each target, in seconds"
+        type: number
+        default: 300
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_FUZZ_VERSION: "0.13.2"
+
+jobs:
+  build:
+    name: Build fuzz targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install nightly Rust
+        # cargo-fuzz needs nightly for -Zsanitizer and coverage flags.
+        run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: fuzz
+          # Only runs on main write the cache, so a PR cannot poison it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version "$CARGO_FUZZ_VERSION"
+      - name: Check the fuzz lockfile is up to date
+        run: cargo +nightly fetch --locked --manifest-path fuzz/Cargo.toml
+      - name: Build every target
+        run: cargo +nightly fuzz build -s none
+      - name: Check that the known-bug skips stay narrow
+        run: cargo +nightly test --locked --manifest-path fuzz/Cargo.toml
+      - name: Replay the seed corpus and regressions
+        # -runs=0 runs each committed input once: a cheap regression test.
+        run: |
+          for target in $(cargo +nightly fuzz list); do
+            dirs=("fuzz/corpus/$target")
+            if [ -d "fuzz/regressions/$target" ]; then
+              dirs+=("fuzz/regressions/$target")
+            fi
+            echo "::group::$target"
+            cargo +nightly fuzz run "$target" -s none "${dirs[@]}" -- -runs=0
+            echo "::endgroup::"
+          done
+      - name: Check the optional strict features compile
+        run: cargo +nightly check --locked --manifest-path fuzz/Cargo.toml --all-features
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - prune_no_panic
+          - prune_idempotent
+          - prune_output_reparses
+          - extract_classes_no_panic
+          - prune_structured
+        # The two round-trip targets keep finding Lightning CSS printer bugs
+        # (fuzz/regressions/README.md) on mangled input. They report and
+        # upload reproducers without failing the run until prunecss stops
+        # reprinting kept rules. Panics and the other invariants still fail.
+        include:
+          - target: prune_idempotent
+            report_only: true
+          - target: prune_output_reparses
+            report_only: true
+    continue-on-error: ${{ matrix.report_only == true }}
+    env:
+      TARGET: ${{ matrix.target }}
+      # Five minutes unless a manual run asks for something else.
+      FUZZ_SECONDS: ${{ inputs.seconds || 300 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install nightly Rust
+        # cargo-fuzz needs nightly for -Zsanitizer and coverage flags.
+        run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: fuzz
+          # Only runs on main write the cache, so a PR cannot poison it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version "$CARGO_FUZZ_VERSION"
+      - name: Fuzz
+        # New inputs go to corpus-work/ so the committed seeds stay as they
+        # are. -timeout=1 reports any input slower than a second as a hang.
+        run: |
+          mkdir -p "fuzz/corpus-work/$TARGET" "fuzz/corpus/$TARGET"
+          cargo +nightly fuzz run "$TARGET" -s none \
+            "fuzz/corpus-work/$TARGET" "fuzz/corpus/$TARGET" -- \
+            -max_total_time="$FUZZ_SECONDS" -timeout=1 \
+            -dict=fuzz/dict/css.dict -print_final_stats=1
+      - name: Report a report-only failure
+        # continue-on-error hides this job's failure in the run's result, so
+        # say it in the summary and as a warning annotation.
+        if: failure() && matrix.report_only == true
+        run: |
+          echo "::warning title=Fuzz $TARGET::found an input that breaks the invariant; reproducer in the fuzz-artifacts-$TARGET artifact"
+          {
+            echo "### Fuzz $TARGET: invariant broken (report-only)"
+            echo
+            echo "The reproducer is in the \`fuzz-artifacts-$TARGET\` artifact. Check it against fuzz/regressions/README.md: a new bug needs a reproducer there and, if it is a known Lightning CSS printer bug, a skip in fuzz/src/lib.rs."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+          retention-days: 30

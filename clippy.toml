@@ -1,0 +1,8 @@
+# Product names that are not code and need no backticks in docs.
+doc-valid-idents = ["PurgeCSS", "UnCSS", "PurifyCSS", "DropCSS", ".."]
+
+# Tests may unwrap, expect, panic and print: a failing test should fail loudly.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true

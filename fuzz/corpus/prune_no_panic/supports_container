@@ -1,0 +1,1 @@
+@supports (display:grid){.a{display:grid}}@container (width>1px){.b{color:red}}@scope (.card){.c{color:red}}@starting-style{.d{opacity:0}}ÿa card

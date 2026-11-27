@@ -1,0 +1,28 @@
+{
+  "name": "prunecss-bench",
+  "private": true,
+  "description": "Benchmark and correctness comparison of prunecss against PurgeCSS",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "fetch": "node scripts/fetch-corpus.mjs",
+    "bench": "node run.mjs",
+    "bench:quick": "node run.mjs --quick"
+  },
+  "dependencies": {
+    "@tailwindcss/cli": "4.3.5",
+    "bootstrap": "5.3.8",
+    "bulma": "1.0.4",
+    "css-select": "6.0.0",
+    "domhandler": "5.0.3",
+    "htmlparser2": "10.0.0",
+    "lightningcss": "1.33.0",
+    "postcss": "8.5.33",
+    "postcss-selector-parser": "7.2.1",
+    "purgecss": "9.1.0",
+    "tailwindcss": "4.3.5",
+    "tinybench": "6.2.5"
+  }
+}

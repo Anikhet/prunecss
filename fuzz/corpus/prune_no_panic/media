@@ -1,0 +1,1 @@
+@media (min-width:768px){.a{color:red}}@media print{.b{x:y}}@media screen and (max-width:767.98px){.c{x:y}}ÿa c

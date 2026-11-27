@@ -1,0 +1,1 @@
+:is(.a,.b) p{x:y}:where(.c){x:y}.a:not(.zzz){x:y}.a:has(> .q){x:y}li:nth-child(2 of .a){x:y}ÿa

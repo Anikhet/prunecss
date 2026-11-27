@@ -1,10 +1,24 @@
-//! Core engine for `prunecss`.
+#![doc = include_str!("../README.md")]
+//!
+//! # How it works
 //!
 //! The pipeline has three steps:
-//! 1. **Scan** content files (HTML, JSX, …) for the class names they use.
+//! 1. **Scan** content files (HTML, JSX, …) for the class names they use,
+//!    with [`extract_classes`].
 //! 2. **Match** those names against the selectors in a stylesheet.
 //! 3. **Prune** the rules whose selectors can never match.
 //!
-//! Only step 1 exists so far; see [`scanner`].
+//! [`prune`] does steps 2 and 3.
 
-pub mod scanner;
+mod pruner;
+mod rules;
+mod safelist;
+mod scanner;
+mod tracking;
+
+pub use pruner::{
+    ParseWarning, PruneError, PruneErrorKind, PruneOptions, PruneOutput, SourceLocation, UsedNames,
+    defined_names, prune,
+};
+pub use safelist::{Pattern, PatternError, PatternErrorKind, Safelist};
+pub use scanner::extract_classes;

@@ -1,0 +1,52 @@
+# Dependabot: https://docs.github.com/en/code-security/dependabot
+# Weekly, grouped updates so the project gets a few PRs a week, not dozens.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    # fuzz/ is its own workspace with its own lockfile, and pins the same
+    # Lightning CSS version as the main workspace.
+    directories: ["/", "/fuzz"]
+    schedule:
+      interval: weekly
+      day: monday
+    # Wait a few days after a release before proposing it, so a broken or
+    # malicious version is more likely to be yanked first. Security updates
+    # are not delayed.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies]
+    open-pull-requests-limit: 5
+    ignore:
+      # Our own crate: release-plz bumps it together with the workspace.
+      - dependency-name: prunecss-core
+    groups:
+      # Lightning CSS is a pinned pre-release (`=1.0.0-alpha.N`) whose alphas
+      # can change output and raise the MSRV. It always gets its own PR so the
+      # upgrade is reviewed on purpose: read its changelog, check snapshot
+      # diffs and the MSRV job before merging.
+      lightningcss:
+        patterns: ["lightningcss"]
+        # One PR for both directories, so the two exact pins move together.
+        group-by: dependency-name
+      # Everything else that is semver-compatible arrives as one PR.
+      cargo-compatible:
+        patterns: ["*"]
+        exclude-patterns: ["lightningcss"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    labels: [dependencies]
+    # Dependabot updates the pinned SHAs and their `# vX.Y.Z` comments.
+    groups:
+      github-actions:
+        patterns: ["*"]

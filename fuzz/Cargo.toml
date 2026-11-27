@@ -1,0 +1,75 @@
+[package]
+name = "prunecss-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+description = "libFuzzer targets for prunecss-core. Run with `cargo +nightly fuzz`."
+
+[package.metadata]
+cargo-fuzz = true
+
+# An empty workspace table keeps this crate out of the main workspace, so the
+# nightly-only fuzz build never touches the stable build or its lockfile.
+[workspace]
+
+[features]
+# Also check the pretty (non-minified) printer: idempotence and agreement
+# with the minified printer. Off by default because Lightning CSS currently
+# fails it; see regressions/README.md.
+pretty = []
+# Turn off every known-bug skip (`has_known_issue` and the whitespace
+# leniency in `same_output`, src/lib.rs), so all of regressions/ fails
+# again until the bugs are fixed.
+no-skips = []
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+prunecss-core = { path = "../crates/prunecss-core" }
+# The same exact pin as the main workspace: the stability check walks the
+# selectors of the pruned output with the parser prunecss itself uses.
+lightningcss = { version = "=1.0.0-alpha.72", default-features = false }
+
+[lib]
+path = "src/lib.rs"
+# The unit tests check that the known-bug skips stay narrow (`cargo test`).
+doc = false
+
+[[bin]]
+name = "prune_no_panic"
+path = "fuzz_targets/prune_no_panic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prune_idempotent"
+path = "fuzz_targets/prune_idempotent.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prune_output_reparses"
+path = "fuzz_targets/prune_output_reparses.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extract_classes_no_panic"
+path = "fuzz_targets/extract_classes_no_panic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prune_structured"
+path = "fuzz_targets/prune_structured.rs"
+test = false
+doc = false
+bench = false
+
+# Line tables make crash backtraces point at source lines.
+[profile.release]
+debug = 1

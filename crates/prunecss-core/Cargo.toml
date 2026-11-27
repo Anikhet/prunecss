@@ -5,11 +5,39 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/prunecss-core"
+exclude = ["proptest-regressions/"]
 
 [dependencies]
+lightningcss.workspace = true
+memchr.workspace = true
+regex.workspace = true
+rustc-hash.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 rstest.workspace = true
+criterion.workspace = true
+
+# The lib has no benches; without this, `cargo bench -- --quick` passes
+# criterion's flags to the libtest harness, which rejects them.
+[lib]
+bench = false
+
+[[bench]]
+name = "scan"
+harness = false
+
+[[bench]]
+name = "prune"
+harness = false
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

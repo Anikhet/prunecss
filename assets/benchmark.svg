@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 284" width="720" height="284" role="img" aria-label="Benchmark: prunecss vs PurgeCSS 9.1 wall time (lower is better)">
+<style>
+  text { font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: #24292f; }
+  .title { font-weight: 600; font-size: 14px; }
+  .corpus { font-weight: 600; }
+  .value, .note { fill: #57606a; }
+  .note { font-size: 11px; }
+  .bar { fill: #afb8c1; }
+  .accent { fill: #0969da; }
+  @media (prefers-color-scheme: dark) {
+    text { fill: #e6edf3; }
+    .value, .note { fill: #8b949e; }
+    .bar { fill: #484f58; }
+    .accent { fill: #2f81f7; }
+  }
+</style>
+<text class="title" x="0" y="16">Wall time to prune, lower is better</text>
+<text class="corpus" x="0" y="45">Bootstrap 5.3</text>
+<text class="tool" x="100" y="64.96" text-anchor="end">prunecss</text>
+<rect class="bar accent" x="110" y="52" width="11.0" height="18" rx="3"/>
+<text class="value" x="128.98658982477295" y="64.96">18 ms</text>
+<text class="tool" x="100" y="87.96" text-anchor="end">PurgeCSS 9.1</text>
+<rect class="bar" x="110" y="75" width="147.9" height="18" rx="3"/>
+<text class="value" x="265.9300986192758" y="87.96">237 ms</text>
+<text class="corpus" x="0" y="125">Bulma 1.0</text>
+<text class="tool" x="100" y="144.96" text-anchor="end">prunecss</text>
+<rect class="bar accent" x="110" y="132" width="22.2" height="18" rx="3"/>
+<text class="value" x="140.18864775994064" y="144.96">36 ms</text>
+<text class="tool" x="100" y="167.96" text-anchor="end">PurgeCSS 9.1</text>
+<rect class="bar" x="110" y="155" width="199.6" height="18" rx="3"/>
+<text class="value" x="317.6477401405729" y="167.96">320 ms</text>
+<text class="corpus" x="0" y="205">Tailwind v4 (4.5 MB)</text>
+<text class="tool" x="100" y="224.96" text-anchor="end">prunecss</text>
+<rect class="bar accent" x="110" y="212" width="97.5" height="18" rx="3"/>
+<text class="value" x="215.4867070302708" y="224.96">156 ms</text>
+<text class="tool" x="100" y="247.96" text-anchor="end">PurgeCSS 9.1</text>
+<rect class="bar" x="110" y="235" width="530.0" height="18" rx="3"/>
+<text class="value" x="648" y="247.96">851 ms</text>
+<text class="note" x="0" y="278">Mean of 10 runs of each CLI on a shared cloud VM (indicative), 2026-11-26. Reproduce: make -C bench</text>
+</svg>

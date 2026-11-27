@@ -1,0 +1,40 @@
+# Labels pull requests by the files they change (actions/labeler).
+# The labels are created by scripts/labels.sh.
+"A-scanner":
+  - changed-files:
+      - any-glob-to-any-file: crates/prunecss-core/src/scanner.rs
+"A-pruner":
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/prunecss-core/src/pruner.rs
+          - crates/prunecss-core/src/rules.rs
+          - crates/prunecss-core/src/safelist.rs
+          - crates/prunecss-core/src/tracking.rs
+"A-cli":
+  - changed-files:
+      - any-glob-to-any-file: crates/prunecss-cli/**
+"A-docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "*.md"
+          - docs/**
+"A-ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - deny.toml
+          - release-plz.toml
+"A-bench":
+  - changed-files:
+      - any-glob-to-any-file:
+          - bench/**
+          - crates/prunecss-core/benches/**
+"A-fuzz":
+  - changed-files:
+      - any-glob-to-any-file: fuzz/**
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - Cargo.toml
+          - Cargo.lock
+          - "**/Cargo.toml"
