@@ -66,7 +66,7 @@ pub(crate) fn remove_unused<R: ToCss>(
         && let Some(text) = reference_text(rules)
     {
         let tokens = extract_classes(&text);
-        let lowered = text.to_lowercase();
+        let lowered = text.to_ascii_lowercase();
         retain_rules(rules, &mut |rule| match rule {
             CssRule::Keyframes(keyframes) if enabled.keyframes => {
                 let name = keyframes_name(&keyframes.name);
@@ -103,8 +103,9 @@ fn keyframes_name<'a>(name: &'a KeyframesName<'_>) -> &'a str {
 }
 
 /// A `@font-face` is referenced when some kept value names one of its
-/// families (case-insensitively), or every word of the family appears in the
-/// content (`style="font-family: 'Open Sans'"`).
+/// families, or every word of the family appears in the content
+/// (`style="font-family: 'Open Sans'"`). Family names are ASCII
+/// case-insensitive, so `lowered_text` must be ASCII-lowercased.
 fn font_face_is_referenced(
     properties: &[FontFaceProperty<'_>],
     lowered_text: &str,
@@ -121,12 +122,16 @@ fn font_face_is_referenced(
         // No family we can read: keep it rather than guess.
         return true;
     };
-    std::iter::once(first).chain(families).any(|family| {
-        lowered_text.contains(&family.to_lowercase())
-            || family.split_ascii_whitespace().all(|word| {
-                // CSS family names are case-insensitive, so content may
-                // write `myfont` for `MyFont`.
-                used.contains_name(word) || used.contains_name(&word.to_lowercase())
+    std::iter::once(first).chain(families).any(|printed| {
+        // Kept values are printed the same way, escapes included.
+        lowered_text.contains(&printed.to_ascii_lowercase())
+            // Content holds the family as written, without CSS escapes.
+            || unescape(&printed).split_ascii_whitespace().all(|word| {
+                // `UsedNames` can only be asked about exact names, so try
+                // the common spellings: as declared, lower and upper case.
+                used.contains_name(word)
+                    || used.contains_name(&word.to_ascii_lowercase())
+                    || used.contains_name(&word.to_ascii_uppercase())
             })
     })
 }
@@ -355,6 +360,24 @@ fn read_identifier(text: &str) -> (Cow<'_, str>, usize) {
     (name, end)
 }
 
+/// Decodes every escape in `text`, leaving everything else as it is.
+fn unescape(text: &str) -> Cow<'_, str> {
+    if !text.contains('\\') {
+        return Cow::Borrowed(text);
+    }
+    let mut decoded = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(slash) = rest.find('\\') {
+        decoded.push_str(&rest[..slash]);
+        // A `\` that starts no escape (before a newline) stays as it is.
+        let (escaped, len) = read_escape(&rest[slash + 1..]).unwrap_or(('\\', 0));
+        decoded.push(escaped);
+        rest = &rest[slash + 1 + len..];
+    }
+    decoded.push_str(rest);
+    Cow::Owned(decoded)
+}
+
 /// Decodes the CSS escape that `text` starts with (what follows a `\`):
 /// up to six hex digits and one optional whitespace, or any other character
 /// but a newline. Returns the character and the bytes it took.
@@ -500,6 +523,16 @@ mod tests {
         assert_eq!(found, [expected]);
     }
 
+    #[rstest]
+    #[case::nothing_to_decode("Open Sans", "Open Sans")]
+    #[case::escaped_char(r"My\.Font", "My.Font")]
+    #[case::hex_crlf("\\41\r\nB", "AB")]
+    #[case::newline_is_not_an_escape("a\\\nb", "a\\\nb")]
+    #[case::trailing_backslash(r"a\", r"a\")]
+    fn unescape_should_decode_css_escapes(#[case] text: &str, #[case] expected: &str) {
+        assert_eq!(unescape(text), expected);
+    }
+
     #[test]
     fn variable_references_should_find_names_in_var_calls() {
         let found: Vec<_> = variable_references("var(--a, var(--b)) calc(1px--c)").collect();
@@ -532,5 +565,37 @@ mod tests {
     fn keyframes_should_be_kept_when_an_escaped_name_is_referenced(#[case] css: &str) {
         let options = PruneOptions::default().keyframes(true);
         assert_eq!(prune_with(css, &["a"], &options).removed_keyframes, 0);
+    }
+
+    #[rstest]
+    #[case::escaped_family(
+        r".a{font-family:My\.Font}@font-face{font-family:My\.Font;src:url(f.woff2)}"
+    )]
+    #[case::quoted_and_escaped(
+        r#".a{font-family:"My.Font"}@font-face{font-family:My\.Font;src:url(f.woff2)}"#
+    )]
+    fn font_face_should_be_kept_when_an_escaped_family_is_referenced(#[case] css: &str) {
+        let options = PruneOptions::default().font_face(true);
+        assert_eq!(prune_with(css, &["a"], &options).removed_font_faces, 0);
+    }
+
+    #[rstest]
+    #[case::upper("MYFONT")]
+    #[case::lower("myfont")]
+    #[case::as_written("MyFont")]
+    fn font_face_should_be_kept_when_content_names_the_family_in_any_case(#[case] word: &str) {
+        let options = PruneOptions::default().font_face(true);
+        let css = "@font-face{font-family:MyFont;src:url(f.woff2)}";
+        assert_eq!(prune_with(css, &[word], &options).removed_font_faces, 0);
+    }
+
+    #[test]
+    fn font_face_should_be_kept_when_content_names_an_escaped_family() {
+        let options = PruneOptions::default().font_face(true);
+        let css = r"@font-face{font-family:My\.Font;src:url(f.woff2)}";
+        assert_eq!(
+            prune_with(css, &["My.Font"], &options).removed_font_faces,
+            0
+        );
     }
 }
