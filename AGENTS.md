@@ -5,7 +5,7 @@ names they use, then remove CSS rules that can never match.
 
 ## Layout
 
-- `crates/prunecss-core` — library, published to crates.io. All logic lives here.
+- `crates/prunecss-core` — library, to be published on crates.io. All logic lives here.
 - `crates/prunecss-cli` — the `prunecss` binary. Thin wrapper; errors use `anyhow`.
 - Planned later: npm package via napi-rs, Vite/PostCSS plugins, then a language
   server + VS Code extension, all wrapping the same core.
@@ -79,7 +79,8 @@ future language-server layer, which waits on editor messages.
 - Red → green → refactor: write the failing test first (`todo!()` placeholder),
   confirm it fails, then implement.
 - Unit tests in `#[cfg(test)] mod tests` next to the code; integration tests in
-  `tests/` run the real CLI against sample projects in `fixtures/`.
+  `crates/prunecss-cli/tests/` run the real CLI against sample projects in
+  `crates/prunecss-cli/tests/fixtures/`.
 - Name tests by behaviour: `extract_classes_should_ignore_data_attributes`.
 - One behaviour per test (a couple of `assert_eq!`s is fine). Prefer
   `assert_eq!` over `assert!`.

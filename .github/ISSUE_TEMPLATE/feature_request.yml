@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea. Please check the [scope and non-goals](https://github.com/Anikhet/prunecss/blob/main/CONTRIBUTING.md#scope-and-non-goals) and the README roadmap first.
+        Thanks for the idea. Please check the [scope and non-goals](https://github.com/Anikhet/prunecss/blob/main/CONTRIBUTING.md#scope-and-non-goals) and search existing issues first.
 
         Please wait for a reply here before writing code. A new feature is something the project maintains for years, so the design needs agreeing first.
   - type: textarea

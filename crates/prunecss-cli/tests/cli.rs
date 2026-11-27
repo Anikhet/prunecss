@@ -507,7 +507,7 @@ fn invalid_arguments_should_exit_with_two() {
     assert_eq!(output.status.code(), Some(2));
 }
 
-// ---- Output safety (found in the pre-release review) ---------------------
+// ---- Output safety ------------------------------------------------------
 
 fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
@@ -730,7 +730,7 @@ fn json_report_should_list_unreadable_rules() {
     assert_eq!(report["files"][0]["warnings"][0]["line"], 2);
 }
 
-// ---- Second review --------------------------------------------------------
+// ---- Regressions ----------------------------------------------------------
 
 #[test]
 fn output_should_refuse_to_overwrite_a_named_input_inside_the_output_directory() {
@@ -824,7 +824,7 @@ fn prune_should_keep_tailwind_v4_css_variable_classes() {
     );
 }
 
-// ---- Third review: file identity, symlinks, pipes, precedence ------------
+// ---- File identity, symlinks, pipes, precedence ---------------------------
 
 #[cfg(unix)]
 fn symlink(target: &str, link: &Path) {

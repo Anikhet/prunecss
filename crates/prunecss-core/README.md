@@ -4,17 +4,19 @@ The engine behind [`prunecss`](https://github.com/Anikhet/prunecss): find the
 class names a project uses, then remove the CSS rules that can never match.
 
 ```rust
-use prunecss_core::{extract_classes, prune, PruneOptions};
+use prunecss_core::{extract_classes, prune, PruneError, PruneOptions};
 
-let html = r#"<button class="btn btn-primary">Save</button>"#;
-let css = ".btn { padding: 1rem } .btn-primary { color: white } .card { border: 1px solid }";
+fn main() -> Result<(), PruneError> {
+    let html = r#"<button class="btn btn-primary">Save</button>"#;
+    let css = ".btn { padding: 1rem } .btn-primary { color: white } .card { border: 1px solid }";
 
-let used = extract_classes(html);
-let output = prune(css, &used, &PruneOptions::default().minify(true))?;
+    let used = extract_classes(html);
+    let output = prune(css, &used, &PruneOptions::default().minify(true))?;
 
-assert_eq!(output.css, ".btn{padding:1rem}.btn-primary{color:#fff}");
-assert_eq!(output.removed_selectors, 1);
-# Ok::<(), prunecss_core::PruneError>(())
+    assert_eq!(output.css, ".btn{padding:1rem}.btn-primary{color:#fff}");
+    assert_eq!(output.removed_selectors, 1);
+    Ok(())
+}
 ```
 
 Matching is conservative: a selector is kept when every class and id it needs
@@ -23,7 +25,7 @@ cause a removal. See the [project README](https://github.com/Anikhet/prunecss)
 for the full rules and known limits.
 
 **Status:** early development, `0.x`. The API may change between minor
-versions; see the changelog.
+versions; see the [changelog](https://github.com/Anikhet/prunecss/blob/main/CHANGELOG.md).
 
 Minimum supported Rust version: 1.88.
 

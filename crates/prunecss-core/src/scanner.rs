@@ -594,7 +594,7 @@ mod tests {
         assert_finds(source, expected);
     }
 
-    // Found in the pre-release review: each of these deleted used CSS.
+    // Regression: each of these deleted used CSS.
     #[rstest]
     #[case::quoted_url_value(r#"<div class="bg-[url('/a.png')]">"#, &["bg-[url('/a.png')]"])]
     #[case::empty_content_value(r#"<p class="before:content-['']">"#, &["before:content-['']"])]
@@ -608,7 +608,7 @@ mod tests {
     #[case::query_adjacent(r#"querySelector(".a+.b")"#, &["a", "b"])]
     #[case::query_sibling(r#"querySelector(".c~.d")"#, &["c", "d"])]
     #[case::js_newline_escape(r#"const html = "card\nbtn";"#, &["card", "btn"])]
-    // Second review: an outer JS/Vue array must not swallow quoted names.
+    // Regression: an outer JS/Vue array must not swallow quoted names.
     #[case::react_children_array(r#"children:[(0,r.jsx)("div",{className:"w-[10px] p-4"})]"#, &["w-[10px]", "p-4"])]
     #[case::vue_class_array(r#"<p :class="['w-[10px]', on && 'p-4']">"#, &["w-[10px]", "p-4"])]
     #[case::clsx_array(r#"clsx(["grid-cols-[1fr_2fr]", "bg-[url('/a.png')]"])"#, &["grid-cols-[1fr_2fr]", "bg-[url('/a.png')]"])]
@@ -620,7 +620,7 @@ mod tests {
         assert_finds(source, expected);
     }
 
-    // Third review: each of these deleted CSS a page uses.
+    // Regression: each of these deleted CSS a page uses.
     #[rstest]
     #[case::tailwind_paren_value(r#"<p class="bg-(--brand)">"#, &["bg-(--brand)"])]
     #[case::tailwind_paren_values(

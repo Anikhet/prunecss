@@ -6,8 +6,6 @@ templates for the class names they use, then removes the CSS rules that can
 never match.
 
 [![CI](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml/badge.svg)](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/prunecss.svg)](https://crates.io/crates/prunecss)
-[![docs.rs](https://img.shields.io/docsrs/prunecss-core)](https://docs.rs/prunecss-core)
 [![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue)](Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
@@ -15,8 +13,9 @@ never match.
   <img alt="Wall time to prune: prunecss 18 ms vs PurgeCSS 237 ms on Bootstrap, 36 vs 320 ms on Bulma, 156 vs 851 ms on Tailwind" src="assets/benchmark.svg" width="720">
 </p>
 
-- **5–24× faster than the PurgeCSS CLI** (median 9×), with 1.5–8× less memory,
-  measured at commit `a66faef`. See [BENCHMARKS.md](BENCHMARKS.md).
+- **5–24× faster than the PurgeCSS CLI** (median 9×) on real and synthetic
+  stylesheets, while PurgeCSS used 1.5–8× as much memory. See
+  [BENCHMARKS.md](BENCHMARKS.md).
 - **Errs on the side of keeping CSS.** On the benchmark corpora prunecss
   removed nothing a static page needs; PurgeCSS's default extractor removed
   376 such rules on Tailwind.
@@ -36,13 +35,15 @@ never match.
 
 ## Install
 
+prunecss is not on crates.io yet. Until the first release, install it from
+this repository (needs Rust 1.88 or newer, from [rustup](https://rustup.rs/)):
+
 ```bash
-cargo install prunecss --locked
+cargo install --git https://github.com/Anikhet/prunecss prunecss --locked
 ```
 
-Prebuilt binaries for Linux, macOS and Windows are attached to each
-[GitHub release](https://github.com/Anikhet/prunecss/releases), with build
-provenance attestations. An npm package is on the [roadmap](#roadmap).
+The first release (0.1.0) will add `cargo install prunecss` and prebuilt
+binaries for Linux, macOS and Windows.
 
 ## Usage
 
@@ -71,21 +72,29 @@ PurgeCSS, and the JSON Schema gives your editor autocompletion:
 ```
 
 Unknown keys are an error, so a typo can't silently change what is removed.
-Command-line flags override the file; `--no-config` ignores it.
+Command-line flags override the file: each on/off setting has a `--no-*` form
+(`--no-minify`, `--no-keyframes`, …) to turn off what the file turns on, and
+when you name stylesheets on the command line only `-o` decides where the
+result goes. `--no-config` ignores the file.
 
 | Task | Command |
 |---|---|
-| Prune and print to stdout | `prunecss prune app.css -c 'src/**/*'` |
+| Prune and print to stdout | `prunecss prune app.css -c 'src/**/*.{html,tsx}'` |
 | Several stylesheets into a directory | `prunecss prune 'dist/*.css' -c src -o dist/pruned/` |
 | Read CSS from a pipe | `cat app.css \| prunecss prune - -c src` |
 | CI check: fail if anything is unused | `prunecss prune --check` |
 | Machine-readable summary | `prunecss prune --check --json` |
-| What names does my code use? | `prunecss scan 'src/**/*' --css dist/app.css` |
+| What names does my code use? | `prunecss scan 'src/**/*.{html,tsx}' --css dist/app.css` |
 | Shell completions | `prunecss completions bash` (also zsh, fish, …) |
 
 Globs respect `.gitignore` (`--no-gitignore` turns that off); files you name
-directly are always used. **If the content patterns match no files at all,
-prunecss refuses to run**, because every class would look unused.
+directly are always used. Point `--content` at templates and scripts, not at
+stylesheets: a class mentioned in a CSS file would count as used. **If the
+content patterns match no files at all, prunecss refuses to run**, because
+every class would look unused.
+
+prunecss never writes over a stylesheet or content file it reads, including
+through symlinks and hard links; such a run stops before writing anything.
 
 Exit codes: `0` success, `1` `--check` found CSS that would be removed,
 `2` any error.
@@ -141,6 +150,8 @@ prunecss prune styles.css --content src/App.jsx \
 - `--safelist-greedy` keeps any selector that contains a match, such as
   `.swiper-slide .unused`.
 - `--safelist-deep` also keeps every rule nested inside a matching selector.
+- `--safelist-keyframes` and `--safelist-variables` protect names from the
+  opt-in removals below.
 
 ### Unused keyframes, fonts and variables (opt-in)
 
@@ -157,6 +168,7 @@ Content files count as references for all three, so an animation, font or
 variable used from JavaScript is kept.
 
 ### Known limits
+
 - Output is reprinted by Lightning CSS, so some values change to an
   equivalent form (`white` becomes `#fff`, `::before` becomes `:before`).
   Printing is tuned for old browsers: colours stay `rgba()` rather than
@@ -195,27 +207,6 @@ one to two weeks.
 - Security issues: see [SECURITY.md](SECURITY.md); please don't open a public issue
 - Changes: see [CHANGELOG.md](CHANGELOG.md)
 - Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-
-## Roadmap
-
-- [x] Scan `class="…"` / `className="…"` attributes
-- [x] Parse CSS with [Lightning CSS](https://lightningcss.dev) and match selectors
-- [x] Remove unused rules and selectors and write the result
-- [x] Detect class names in JS, Vue, Svelte, Astro and Angular templates
-- [x] Safelist (standard, greedy, deep; exact or `/regex/`)
-- [x] Opt-in removal of unused `@keyframes`, `@font-face` and custom properties
-- [x] `prunecss.json` config file with JSON Schema
-- [x] Globs, `.gitignore`-aware discovery and parallel scanning
-- [x] `--check` mode, exit codes, JSON report, stdin, shell completions
-- [x] Fuzzing, property tests, benchmarks against PurgeCSS
-- [ ] Keep the original bytes of every kept rule instead of reprinting it
-- [ ] Report wrongly removed CSS from a real browser (Playwright coverage)
-- [ ] npm package, Vite and PostCSS plugins
-- [ ] Language server and VS Code extension
-
-## Requirements
-
-Rust 1.88 or newer to build from source.
 
 ## License
 

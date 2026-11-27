@@ -2,11 +2,9 @@
 
 ## Where to ask
 
-- **Questions** ("how do I…?", "why was this kept?"): use
-  [GitHub Discussions](https://github.com/Anikhet/prunecss/discussions), in
-  the Q&A category. If Discussions is not available, open an
-  [issue](https://github.com/Anikhet/prunecss/issues) and add the `question`
-  label.
+- **Questions** ("how do I…?", "why was this kept?"): open an issue with
+  the [question form](https://github.com/Anikhet/prunecss/issues/new?template=question.yml).
+  The [FAQ](FAQ.md) may already answer it.
 - **Bugs:** open an issue with the
   [bug report form](https://github.com/Anikhet/prunecss/issues/new?template=bug_report.yml).
 - **CSS that was wrongly removed:** use the
@@ -15,7 +13,7 @@
   [feature request](https://github.com/Anikhet/prunecss/issues/new?template=feature_request.yml).
 - **Security problems:** do not post in public. See [SECURITY.md](SECURITY.md).
 
-Please search existing issues and discussions first. Your question may
+Please search [existing issues](https://github.com/Anikhet/prunecss/issues?q=is%3Aissue) first. Your question may
 already have an answer.
 
 ## What to include

@@ -33,7 +33,7 @@ see [`regressions/README.md`](regressions/README.md).
 | `prune_no_panic` | bytes, `css 0xFF content` | `prune(css, extract_classes(content))` never panics, minified or not. Errors are fine. |
 | `prune_idempotent` | bytes, `css 0xFF content` | Pruning the minified output again with the same names gives the same output and removes nothing. |
 | `prune_output_reparses` | bytes, `css 0xFF content` | The output parses again, and pruning it with *every* class and id name it contains removes nothing. |
-| `extract_classes_no_panic` | text | `extract_classes` never panics; every name is non-empty, has no ASCII whitespace and is a slice of the input. |
+| `extract_classes_no_panic` | text | `extract_classes` never panics; every name is non-empty and has no ASCII whitespace; a borrowed name is a slice of the input, and an owned (decoded) name appears only when the input contains `&` (an HTML entity) or `\` (a JavaScript escape). |
 | `prune_structured` | a CSS grammar (`src/grammar.rs`) | All of the above `prune` checks, on well-formed stylesheets that reach the pruning logic on almost every run. |
 
 Notes:
@@ -58,8 +58,7 @@ never skipped. The skips are `has_known_issue` and `same_output` in
 `src/lib.rs`. Each skip names its bug in `regressions/README.md`. When a bug
 is fixed, delete its skip. `cargo test` in `fuzz/` checks that every file in
 `regressions/` is still skipped and that ordinary CSS (hex colours, Tailwind
-escapes such as `.\32 xl\:inset-0`, escapes in strings) is not; CI runs it on
-every pull request that touches the fuzz code.
+escapes such as `.\32 xl\:inset-0`, escapes in strings) is not.
 
 Two Cargo features turn on stricter checks that currently fail:
 
@@ -147,6 +146,7 @@ cargo +nightly fuzz run prune_idempotent -s none \
 
 ## In CI
 
-`.github/workflows/fuzz.yml` builds every target on pull requests that touch
-`crates/prunecss-core/` or `fuzz/`. Once a day, and on manual dispatch, it
+`.github/workflows/fuzz.yml` builds every target, runs `cargo test` in
+`fuzz/` and replays the seeds and regressions on pull requests that touch
+`crates/prunecss-core/`, `fuzz/` or the workspace manifests. Once a day, and on manual dispatch, it
 fuzzes each target for 5 minutes and uploads `fuzz/artifacts/` if one fails.

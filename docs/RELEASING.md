@@ -66,16 +66,24 @@ number.
 
 ### 3. Publish 0.1.0 by hand
 
-First finish the 0.1.0 notes in `CHANGELOG.md`, in a PR merged to `main`:
+First date the 0.1.0 notes in `CHANGELOG.md`, in a PR merged to `main`:
 
-- Move everything under `## [Unreleased]` into the `## [0.1.0]` section.
 - Replace `Unreleased` in the `## [0.1.0] - Unreleased` heading with the
   publish date, for example `## [0.1.0] - 2026-12-01`.
-- Leave the `## [Unreleased]` heading above it, empty.
+- Keep the `## [Unreleased]` heading above it, empty. If anything was added
+  under it since, move it into the 0.1.0 section first.
 
 release-plz inserts each new release right below `## [Unreleased]`, so
 anything left under that heading would end up inside the next generated
 release section.
+
+Once that PR is merged, update your local checkout so the publish and tag
+commands below run on the merged notes:
+
+```bash
+git switch main
+git pull --ff-only origin main
+```
 
 The library has to exist before the CLI that depends on it:
 
@@ -148,8 +156,9 @@ Repository Settings, Actions, General, **Workflow permissions**:
   workflow asks for the extra permissions it needs, job by job.
 - Tick **Allow GitHub Actions to create and approve pull requests**.
 
-Also create two labels (Issues, Labels, New label): `release` (used on the
-release PR) and `dependencies` (used by Dependabot).
+Also create the labels that release-plz (`release`), Dependabot
+(`dependencies`), the issue forms and `.github/labeler.yml` use. With the
+GitHub CLI logged in, `scripts/labels.sh` creates or updates all of them.
 
 ### 8. Protect `main` with a ruleset
 
