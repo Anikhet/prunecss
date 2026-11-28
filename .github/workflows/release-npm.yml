@@ -1,0 +1,81 @@
+# Publishes the npm packages for a release: one package per prebuilt binary
+# (prunecss-darwin-arm64, prunecss-linux-x64-gnu, ...) and the `prunecss`
+# launcher that depends on them, so `npx prunecss` works without Rust.
+#
+# Called right after release-binaries.yml in the same workflow run, whose
+# build jobs leave the release archives as `dist-<target>` artifacts. The
+# packages are assembled by npm/assemble.mjs, the same script the CI `npm`
+# job tests. Publishing uses the NPM_TOKEN repository secret and adds npm
+# provenance (a signed link from each package to this workflow run).
+name: Release npm packages
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: CLI tag to publish, for example prunecss-v0.2.0
+        required: true
+        type: string
+    secrets:
+      NPM_TOKEN:
+        required: true
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # npm provenance (Sigstore)
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Read the version from the tag
+        id: version
+        run: |
+          if [[ ! "$TAG" =~ ^prunecss-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+            echo "::error::'$TAG' is not a prunecss CLI tag (expected prunecss-vX.Y.Z)"
+            exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Assemble the packages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: node npm/assemble.mjs --version "$VERSION" --dist dist --out npm-out
+      # Platform packages first: the launcher's optional dependencies must
+      # exist before anyone installs it. Each package is skipped if this
+      # version is already on npm, so a failed run can be re-run.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::The NPM_TOKEN repository secret is not set"
+            exit 1
+          fi
+          # npm reads the token from the environment; it is never written out.
+          npmrc="$RUNNER_TEMP/.npmrc"
+          # shellcheck disable=SC2016 # npm, not the shell, expands ${NODE_AUTH_TOKEN}
+          printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > "$npmrc"
+          export NPM_CONFIG_USERCONFIG="$npmrc"
+          for dir in npm-out/platforms/* npm-out/prunecss; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            if npm view "$name@$VERSION" version > /dev/null 2>&1; then
+              echo "$name@$VERSION is already on npm; skipping"
+            else
+              npm publish "./$dir" --access public --provenance
+            fi
+          done

@@ -125,6 +125,20 @@ jobs:
     with:
       tag: ${{ needs.release-plz-release.outputs.cli-tag }}
 
+  # Same run as the binary build, so its `dist-*` artifacts are available.
+  release-npm:
+    name: Release npm packages
+    needs: [release-plz-release, release-binaries]
+    if: needs.release-plz-release.outputs.cli-tag != ''
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    uses: ./.github/workflows/release-npm.yml # zizmor: ignore[self-repository]
+    with:
+      tag: ${{ needs.release-plz-release.outputs.cli-tag }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   # Opens or updates the release PR (version bumps + CHANGELOG.md).
   release-plz-pr:
     name: Release-plz PR
