@@ -20,7 +20,7 @@ npm install --save-dev prunecss
 ```json
 {
   "scripts": {
-    "postbuild": "prunecss prune dist/app.css --content 'src/**/*.{html,tsx}' -o dist/app.pruned.css"
+    "postbuild": "prunecss prune dist/app.css --content \"src/**/*.{html,tsx}\" -o dist/app.pruned.css"
   }
 }
 ```
