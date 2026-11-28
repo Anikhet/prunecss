@@ -79,7 +79,22 @@ const shared = {
   repository: launcherManifest.repository,
 };
 
+// The newest glibc symbol version a binary needs (for example "2.35"), read
+// from the version strings in its dynamic symbol table. The launcher skips a
+// glibc build on older systems and runs the static musl build instead.
+function glibcMinimum(binary) {
+  const text = readFileSync(binary).toString('latin1');
+  let best = null;
+  for (const [, version] of text.matchAll(/GLIBC_(\d+\.\d+(?:\.\d+)?)/g)) {
+    const [a, b] = [version, best || '0'].map((v) => v.split('.').map(Number));
+    const newer = a[0] - b[0] || a[1] - (b[1] || 0) || (a[2] || 0) - (b[2] || 0);
+    if (newer > 0) best = version;
+  }
+  return best;
+}
+
 const built = [];
+const glibcMinimums = {};
 for (const platform of platforms) {
   const binary = binaryFor(platform);
   if (!binary) continue;
@@ -95,12 +110,20 @@ for (const platform of platforms) {
     description: `The prunecss binary for ${platform.os}-${platform.cpu}${platform.libc ? ` (${platform.libc})` : ''}. Install the \`prunecss\` package instead.`,
     os: [platform.os],
     cpu: [platform.cpu],
-    ...(platform.libc ? { libc: [platform.libc] } : {}),
+    // The musl build is statically linked and runs on any Linux, so only the
+    // glibc builds are restricted. npm skips a package whose libc does not
+    // match, which would stop the musl fallback installing on glibc hosts.
+    ...(platform.libc === 'glibc' ? { libc: ['glibc'] } : {}),
     files: ['bin/', 'LICENSE-MIT', 'LICENSE-APACHE'],
     preferUnplugged: true,
   };
   writeFileSync(join(dir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(join(dir, 'README.md'), `# ${platform.package}\n\nThe prebuilt [prunecss](https://www.npmjs.com/package/prunecss) binary for ${manifest.os[0]}-${manifest.cpu[0]}${platform.libc ? ` (${platform.libc})` : ''}. Do not install this package directly: install \`prunecss\`, which picks the right binary for your platform.\n`);
+  if (platform.libc === 'glibc') {
+    const minimum = glibcMinimum(binary);
+    if (!minimum) fail(`${platform.target}: found no GLIBC symbol versions in the binary`);
+    glibcMinimums[platform.package] = minimum;
+  }
   built.push(platform.package);
 }
 if (built.length === 0) fail('no platform package was built');
@@ -115,8 +138,13 @@ for (const platform of platforms) {
   if (args.dist || built.includes(platform.package)) manifest.optionalDependencies[platform.package] = version;
 }
 writeFileSync(join(launcherOut, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+// The launcher's copy of the platform list records what each glibc build
+// needs, measured from the binaries of this release.
+const launcherPlatforms = platforms.map((p) => (glibcMinimums[p.package] ? { ...p, glibcMin: glibcMinimums[p.package] } : p));
+writeFileSync(join(launcherOut, 'platforms.json'), `${JSON.stringify(launcherPlatforms, null, 2)}\n`);
 chmodSync(join(launcherOut, 'bin', 'prunecss.js'), 0o755);
 
 console.log(`assembled prunecss ${version}: ${built.join(', ')}`);
+for (const [name, minimum] of Object.entries(glibcMinimums)) console.log(`  ${name} needs glibc >= ${minimum}`);
 console.log(readdirSync(join(out, 'platforms')).map((p) => `  ${join(out, 'platforms', p)}`).join('\n'));
 console.log(`  ${launcherOut}`);

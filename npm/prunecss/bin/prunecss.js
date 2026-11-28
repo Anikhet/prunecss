@@ -10,33 +10,23 @@
 
 const { spawnSync } = require('node:child_process');
 const platforms = require('../platforms.json');
+const { candidates } = require('../lib/select.js');
 
-function isMusl() {
-  // glibc reports its version here; musl-based systems (Alpine) do not.
-  const report = process.report && process.report.getReport ? process.report.getReport() : null;
-  const header = report && (typeof report === 'string' ? JSON.parse(report) : report).header;
-  return !(header && header.glibcVersionRuntime);
-}
-
-function candidates() {
-  const matching = platforms.filter(
-    (p) => p.os === process.platform && p.cpu === process.arch,
-  );
-  if (process.platform === 'linux') {
-    // Prefer the build for this system's C library. The musl build is
-    // statically linked and also runs on glibc systems, so the other one is
-    // kept as a fallback.
-    const wanted = isMusl() ? 'musl' : 'glibc';
-    matching.sort((a, b) => (a.libc === wanted ? 0 : 1) - (b.libc === wanted ? 0 : 1));
-  }
-  return matching;
+// The glibc version of this system, or null on musl systems (Alpine) and
+// other operating systems. Node reports it in its diagnostic report header.
+function glibcVersion() {
+  if (process.platform !== 'linux' || !process.report || !process.report.getReport) return null;
+  const report = process.report.getReport();
+  const header = (typeof report === 'string' ? JSON.parse(report) : report).header;
+  return (header && header.glibcVersionRuntime) || null;
 }
 
 function findBinary() {
   if (process.env.PRUNECSS_BINARY) {
     return process.env.PRUNECSS_BINARY;
   }
-  for (const platform of candidates()) {
+  const host = { platform: process.platform, arch: process.arch, glibcVersion: glibcVersion() };
+  for (const platform of candidates(platforms, host)) {
     const file = platform.os === 'win32' ? 'prunecss.exe' : 'prunecss';
     try {
       return require.resolve(`${platform.package}/bin/${file}`);
@@ -53,6 +43,7 @@ if (!binary) {
   process.stderr.write(
     `prunecss: no prebuilt binary for ${process.platform}-${process.arch}.\n` +
       `Supported: ${supported.join(', ')}.\n` +
+      'On Linux, the glibc builds need a recent glibc; x64 falls back to the static musl build.\n' +
       'If your platform is listed, reinstall without --no-optional / --omit=optional.\n' +
       'Otherwise install from source with Rust: cargo install prunecss --locked\n',
   );

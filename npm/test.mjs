@@ -5,7 +5,8 @@
 //   cargo build -p prunecss
 //   node npm/test.mjs target/debug/prunecss x86_64-unknown-linux-gnu
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,32 @@ if (!binaryArg || !target) {
   process.exit(2);
 }
 const binary = resolve(binaryArg);
+
+// Platform selection, for hosts other than this one.
+const { candidates } = createRequire(import.meta.url)('./prunecss/lib/select.js');
+const table = JSON.parse(readFileSync(join(here, 'prunecss/platforms.json'), 'utf8'))
+  .map((p) => (p.libc === 'glibc' ? { ...p, glibcMin: '2.35' } : p));
+const pick = (host) => candidates(table, host).map((p) => p.package);
+const selection = [
+  ['glibc new enough: glibc build, musl as fallback', { platform: 'linux', arch: 'x64', glibcVersion: '2.39' }, ['@prunecss/linux-x64-gnu', '@prunecss/linux-x64-musl']],
+  ['glibc too old (Debian 11): musl build only', { platform: 'linux', arch: 'x64', glibcVersion: '2.31' }, ['@prunecss/linux-x64-musl']],
+  ['musl host (Alpine): musl build only', { platform: 'linux', arch: 'x64', glibcVersion: null }, ['@prunecss/linux-x64-musl']],
+  ['arm64 Linux with old glibc: nothing that can run', { platform: 'linux', arch: 'arm64', glibcVersion: '2.31' }, []],
+  ['Apple silicon', { platform: 'darwin', arch: 'arm64', glibcVersion: null }, ['@prunecss/darwin-arm64']],
+  ['Windows x64', { platform: 'win32', arch: 'x64', glibcVersion: null }, ['@prunecss/win32-x64']],
+  ['unsupported platform', { platform: 'freebsd', arch: 'x64', glibcVersion: null }, []],
+];
+let selectionFailures = 0;
+for (const [name, host, expected] of selection) {
+  try {
+    assert.deepEqual(pick(host), expected);
+    console.log(`ok   select: ${name}`);
+  } catch (error) {
+    selectionFailures += 1;
+    console.log(`FAIL select: ${name}\n${error.message}`);
+  }
+}
+
 const cargo = readFileSync(join(root, 'Cargo.toml'), 'utf8');
 const version = /\[workspace\.package\][^[]*?\nversion\s*=\s*"([^"]+)"/.exec(cargo)?.[1];
 assert.ok(version, 'workspace version not found in Cargo.toml');
@@ -37,7 +64,7 @@ for (const dir of packageDirs) {
 
 // Install into an empty project, offline: nothing may come from the registry.
 const project = join(work, 'project');
-execFileSync('mkdir', ['-p', project]);
+mkdirSync(project, { recursive: true });
 writeFileSync(join(project, 'package.json'), '{ "name": "test-project", "private": true }\n');
 execFileSync('npm', ['install', '--no-audit', '--no-fund', '--offline', ...tarballs], { cwd: project, stdio: 'inherit' });
 
@@ -88,6 +115,7 @@ check('npx finds the command', () => {
   assert.equal(result.stdout.trim(), `prunecss ${version}`);
 });
 
+failures += selectionFailures;
 if (failures > 0) {
   console.log(`${failures} check(s) failed`);
   process.exit(1);
