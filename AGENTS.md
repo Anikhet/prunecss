@@ -5,7 +5,7 @@ names they use, then remove CSS rules that can never match.
 
 ## Layout
 
-- `crates/prunecss-core` — library, to be published on crates.io. All logic lives here.
+- `crates/prunecss-core` — library, published on crates.io. All logic lives here.
 - `crates/prunecss-cli` — the `prunecss` binary. Thin wrapper; errors use `anyhow`.
 - Planned later: npm package via napi-rs, Vite/PostCSS plugins, then a language
   server + VS Code extension, all wrapping the same core.

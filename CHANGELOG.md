@@ -15,7 +15,7 @@ not a raw commit log. See [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages).
 
 ## [Unreleased]
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-11-27
 
 First release.
 

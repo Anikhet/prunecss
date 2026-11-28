@@ -2,10 +2,9 @@
 
 ## Supported versions
 
-No version has been released yet; the first will be 0.1.0. While prunecss
-is at 0.x, only the latest 0.x minor release gets security fixes. For
-example, once 0.3.0 is out, fixes go into 0.3.x and 0.2.x gets no more
-updates. Until 0.1.0 is out, fixes go into `main`.
+While prunecss is at 0.x, only the latest 0.x minor release gets security
+fixes. For example, once 0.3.0 is out, fixes go into 0.3.x and 0.2.x gets no
+more updates.
 
 | Version              | Supported |
 | -------------------- | --------- |

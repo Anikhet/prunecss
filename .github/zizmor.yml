@@ -1,0 +1,8 @@
+# zizmor configuration. Keep exceptions narrow and explain each one.
+rules:
+  use-trusted-publishing:
+    ignore:
+      # crates.io Trusted Publishing can only be set up for a crate that
+      # already exists, so the one-time first publish has to use a token.
+      # Remove this entry together with the workflow after 0.1.0.
+      - publish-first-release.yml

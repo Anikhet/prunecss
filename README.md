@@ -6,6 +6,8 @@ templates for the class names they use, then removes the CSS rules that can
 never match.
 
 [![CI](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml/badge.svg)](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/prunecss.svg)](https://crates.io/crates/prunecss)
+[![docs.rs](https://img.shields.io/docsrs/prunecss-core)](https://docs.rs/prunecss-core)
 [![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue)](Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
@@ -35,15 +37,15 @@ never match.
 
 ## Install
 
-prunecss is not on crates.io yet. Until the first release, install it from
-this repository (needs Rust 1.88 or newer, from [rustup](https://rustup.rs/)):
+With Rust 1.88 or newer (from [rustup](https://rustup.rs/)):
 
 ```bash
-cargo install --git https://github.com/Anikhet/prunecss prunecss --locked
+cargo install prunecss --locked
 ```
 
-The first release (0.1.0) will add `cargo install prunecss` and prebuilt
-binaries for Linux, macOS and Windows.
+Or download a prebuilt binary for Linux, macOS or Windows from the
+[latest release](https://github.com/Anikhet/prunecss/releases/latest); each
+comes with a build provenance attestation.
 
 ## Usage
 
