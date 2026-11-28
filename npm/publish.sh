@@ -28,6 +28,14 @@ else
   echo "Authenticating with npm trusted publishing (OIDC)"
 fi
 
+# npm refuses to put a prerelease (0.2.0-rc.1) under the default `latest`
+# tag, and users running `npx prunecss` should not get one anyway.
+tag=latest
+if [[ "$version" == *-* ]]; then
+  tag=next
+fi
+echo "Publishing $version under the npm dist-tag '$tag'"
+
 for dir in "$out"/platforms/* "$out"/prunecss; do
   # An absolute path, so npm reads it as a folder and never as a package
   # name or a GitHub "owner/repo" shorthand.
@@ -36,6 +44,6 @@ for dir in "$out"/platforms/* "$out"/prunecss; do
   if npm view "$name@$version" version > /dev/null 2>&1; then
     echo "$name@$version is already on npm; skipping"
   else
-    npm publish "$dir" --access public --provenance
+    npm publish "$dir" --access public --provenance --tag "$tag"
   fi
 done
