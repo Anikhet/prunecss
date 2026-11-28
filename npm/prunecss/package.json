@@ -1,0 +1,22 @@
+{
+  "name": "prunecss",
+  "version": "0.0.0",
+  "description": "Remove unused CSS, fast. A Rust alternative to PurgeCSS.",
+  "keywords": ["css", "purgecss", "unused-css", "tailwindcss", "cli", "rust"],
+  "homepage": "https://github.com/Anikhet/prunecss#readme",
+  "bugs": "https://github.com/Anikhet/prunecss/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anikhet/prunecss.git",
+    "directory": "npm/prunecss"
+  },
+  "license": "MIT OR Apache-2.0",
+  "bin": {
+    "prunecss": "bin/prunecss.js"
+  },
+  "files": ["bin/", "platforms.json", "README.md", "LICENSE-MIT", "LICENSE-APACHE"],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {}
+}
