@@ -1,5 +1,6 @@
 // Builds the npm packages for one release into an output directory:
-//   <out>/platforms/<package>/  one package per binary (os/cpu/libc fields)
+//   <out>/platforms/<target>/   one package per binary (@prunecss/<platform>,
+//                               with os/cpu/libc fields)
 //   <out>/prunecss/             the launcher, depending on all of them
 //
 // From the release archives (what the release workflow publishes):
@@ -82,7 +83,7 @@ const built = [];
 for (const platform of platforms) {
   const binary = binaryFor(platform);
   if (!binary) continue;
-  const dir = join(out, 'platforms', platform.package);
+  const dir = join(out, 'platforms', platform.target);
   const exe = platform.os === 'win32' ? 'prunecss.exe' : 'prunecss';
   mkdirSync(join(dir, 'bin'), { recursive: true });
   copyFileSync(binary, join(dir, 'bin', exe));

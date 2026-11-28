@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Runs the prebuilt prunecss binary for this platform.
 //
-// The binaries live in one npm package per platform (prunecss-darwin-arm64,
-// prunecss-linux-x64-gnu, ...). They are optional dependencies of this
+// The binaries live in one npm package per platform (@prunecss/darwin-arm64,
+// @prunecss/linux-x64-gnu, ...). They are optional dependencies of this
 // package with `os`/`cpu` fields, so npm installs only the one that fits.
 // This script finds it and runs it with the same arguments, standard
 // streams and exit code.
