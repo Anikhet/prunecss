@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 # Verified minimum: let chains (`if let … && let …`) need 1.88. CI checks it.
@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "web-programming", "development-tools"]
 
 [workspace.dependencies]
 # Internal crates need a version as well as a path so they can be published.
-prunecss-core = { path = "crates/prunecss-core", version = "0.1.0" }
+prunecss-core = { path = "crates/prunecss-core", version = "0.1.1" }
 anyhow = "1"
 rstest = "0.29"
 proptest = "1"
