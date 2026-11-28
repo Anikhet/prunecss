@@ -125,6 +125,61 @@ jobs:
     with:
       tag: ${{ needs.release-plz-release.outputs.cli-tag }}
 
+  # Publishes the npm packages (npm/assemble.mjs, npm/publish.sh) from the
+  # dist-* artifacts the binary build left in this run. Authenticates with npm
+  # trusted publishing only: no token is stored for later releases.
+  release-npm:
+    name: Release npm packages
+    needs: [release-plz-release, release-binaries]
+    if: needs.release-plz-release.outputs.cli-tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Secrets for publishing live in the `release` environment, which only
+    # `main` may use (docs/RELEASING.md). npm trusted publishing is bound to
+    # this workflow file and this environment.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC) and provenance
+    env:
+      TAG: ${{ needs.release-plz-release.outputs.cli-tag }}
+    steps:
+      - name: Read the version from the tag
+        id: version
+        run: |
+          if [[ ! "$TAG" =~ ^prunecss-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+            echo "::error::'$TAG' is not a prunecss CLI tag (expected prunecss-vX.Y.Z)"
+            exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+      # The packaging scripts come from the commit this workflow runs on; the
+      # binaries come from the tagged build (the dist-* artifacts of this run).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Trusted publishing needs Node >= 22.14 and npm >= 11.5.1. Node
+      # 24.22.3 ships npm 11.19.1, so no separate npm install is needed.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.3
+      - name: Check the npm version
+        run: |
+          npm --version
+          node -e 'const [a,b,c]=require("child_process").execSync("npm --version").toString().trim().split(".").map(Number); if (a*1e6+b*1e3+c < 11005001) { console.error("::error::npm >= 11.5.1 is required for trusted publishing"); process.exit(1) }'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Assemble the packages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: node npm/assemble.mjs --version "$VERSION" --dist dist --out npm-out
+      - name: Publish
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash npm/publish.sh "$VERSION" npm-out
+
   # Opens or updates the release PR (version bumps + CHANGELOG.md).
   release-plz-pr:
     name: Release-plz PR

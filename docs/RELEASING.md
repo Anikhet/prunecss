@@ -85,12 +85,33 @@ git switch main
 git pull --ff-only origin main
 ```
 
+**The npm packages.** npm, like crates.io, only allows trusted publishing
+for packages that already exist, so the first npm publish also uses a token:
+
+1. On <https://www.npmjs.com>, create a free organization named `prunecss`
+   (your avatar, Add Organization). It owns the `@prunecss/` scope, so nobody
+   else can publish a package under the names the launcher depends on.
+2. Create a token: your avatar, Access Tokens, Generate New Token, Granular
+   Access Token. **Read and write** for all packages and for the `prunecss`
+   organization (the packages do not exist yet, so they cannot be picked by
+   name), the shortest expiry offered, and "Bypass two-factor
+   authentication" so a workflow can publish with it.
+3. Save it as `NPM_TOKEN`: Settings, Environments, `release`, Environment
+   secrets (or as a repository secret if the environment does not exist
+   yet). The publish jobs run in that environment, so only `main` can use it.
+
+Do this before running the first-release workflow: it publishes the six
+`@prunecss/<platform>` packages and `prunecss` with that token, and its npm
+job fails if the secret is missing. Every later release
+(`release-plz.yml`) publishes with npm trusted publishing and no token; see
+step 6b.
+
 **Without a local Rust setup:** store the crates.io token as the
 repository secret `CARGO_REGISTRY_TOKEN` (Settings, Secrets and variables,
 Actions), then run the **Publish first release** workflow on `main`
 (Actions, Publish first release, Run workflow). It publishes both crates,
-pushes both tags and builds the binaries into a draft release, so the
-commands below are not needed. Then continue with step 4, and delete the
+pushes both tags, builds the binaries into a draft release and publishes
+the npm packages, so the commands below are not needed. Then continue with step 4, and delete the
 secret along with the token.
 
 **From your own machine instead:** the library has to exist before the CLI
@@ -115,10 +136,12 @@ Pushing `prunecss-v0.1.0` starts the **Release binaries** workflow. Because
 no GitHub release exists yet, it creates a *draft* release with the binaries
 attached. Open it under Releases, write a short description and publish it.
 
-### 4. Throw the token away
+### 4. Throw the tokens away
 
-Run `cargo logout`, then delete the token on crates.io (Account Settings, API
-Tokens, Revoke). From now on nothing needs a crates.io token.
+Delete the crates.io token (crates.io, Account Settings, API Tokens, Revoke;
+run `cargo logout` if you used it locally) and the `CARGO_REGISTRY_TOKEN`
+secret. Once step 6b is done, also revoke the npm token on npmjs.com and
+delete the `NPM_TOKEN` secret. From then on no release needs a stored token.
 
 ### 5. Create the `release` environment on GitHub
 
@@ -156,6 +179,28 @@ token (that is what `id-token: write` in the workflow allows). release-plz
 swaps it with crates.io for a publish token that lasts a few minutes. The
 environment check means no other workflow or job in the repository can do
 this, even though they can also ask GitHub for an identity token.
+
+### 6b. Turn on trusted publishing on npm
+
+Do this for **each** of the seven packages: `prunecss` and the six
+`@prunecss/...` packages (`darwin-arm64`, `darwin-x64`, `linux-x64-gnu`,
+`linux-x64-musl`, `linux-arm64-gnu`, `win32-x64`):
+
+1. Open the package on npmjs.com, then Settings, Trusted Publisher, GitHub
+   Actions, and fill in:
+   - Organization or user: `Anikhet`
+   - Repository: `prunecss`
+   - Workflow filename: `release-plz.yml`
+   - Environment name: `release`
+2. Under Publishing access, choose **Require two-factor authentication and
+   disallow tokens**, then Update Package Settings. Trusted publishing keeps
+   working (it does not use a token); a leaked token can no longer publish.
+
+npm checks the configuration only when a publish happens, so a mistake shows
+up on the next release as a 404 from `npm publish`. The usual causes are a
+typo in a field (they are case-sensitive) or a missing `id-token: write`.
+The job pins Node 24.22.3, whose bundled npm 11.19.1 supports trusted
+publishing (it needs npm 11.5.1 or later).
 
 ### 7. Allow release-plz to open pull requests
 
