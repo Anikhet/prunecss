@@ -21,6 +21,9 @@ First release.
 
 ### Added
 
+- **npm package**: `npx prunecss` and `npm install --save-dev prunecss` run
+  the prebuilt binary for macOS (Apple silicon and Intel), Linux (x64 glibc
+  and musl, arm64) and Windows (x64), with no Rust needed.
 - **Scanner** that finds candidate class names in any text: HTML, JSX/TSX
   (`className`, `clsx(...)`, template literals, object keys), Vue (`:class`),
   Svelte (`class:active`), Astro (`class:list`), Angular (`[ngClass]`), CSS

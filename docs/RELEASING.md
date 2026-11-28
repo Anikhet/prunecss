@@ -115,6 +115,14 @@ Pushing `prunecss-v0.1.0` starts the **Release binaries** workflow. Because
 no GitHub release exists yet, it creates a *draft* release with the binaries
 attached. Open it under Releases, write a short description and publish it.
 
+The npm packages are published by `release-npm.yml` with the `NPM_TOKEN`
+repository secret, both by the first-release workflow and by every later
+release. To create it: on <https://www.npmjs.com>, Account, Access Tokens,
+Generate New Token, Granular Access Token, with **Read and write** permission
+for all packages (the package names do not exist before the first publish)
+and, if offered, "Bypass two-factor authentication" so the workflow can
+publish. Save it as the `NPM_TOKEN` repository secret.
+
 ### 4. Throw the token away
 
 Run `cargo logout`, then delete the token on crates.io (Account Settings, API
