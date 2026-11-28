@@ -7,6 +7,7 @@ never match.
 
 [![CI](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml/badge.svg)](https://github.com/Anikhet/prunecss/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/prunecss.svg)](https://crates.io/crates/prunecss)
+[![npm](https://img.shields.io/npm/v/prunecss.svg)](https://www.npmjs.com/package/prunecss)
 [![docs.rs](https://img.shields.io/docsrs/prunecss-core)](https://docs.rs/prunecss-core)
 [![MSRV 1.88](https://img.shields.io/badge/MSRV-1.88-blue)](Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
@@ -36,6 +37,13 @@ never match.
 > and [report anything wrongly removed](https://github.com/Anikhet/prunecss/issues/new?template=false_removal.yml).
 
 ## Install
+
+With Node.js 18 or newer, no Rust needed:
+
+```bash
+npx prunecss --help                 # run without installing
+npm install --save-dev prunecss     # or add it to your project
+```
 
 With Rust 1.88 or newer (from [rustup](https://rustup.rs/)):
 
